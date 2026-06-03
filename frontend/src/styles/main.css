@@ -1,0 +1,77 @@
+:root {
+  --shu-primary: #2f54eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: #1f2329;
+  background: #f5f7fa;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.page-header .subtitle {
+  color: #8a8f99;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  border-radius: 10px;
+}
+
+.stat-card .num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.stat-card .label {
+  color: #8a8f99;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.capacity-full {
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.capacity-ok {
+  color: #67c23a;
+  font-weight: 600;
+}
