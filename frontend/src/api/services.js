@@ -131,6 +131,9 @@ export const adminApi = {
     saveCourse(payload) {
         return USE_MOCK ? mock({ ok: true }) : http.post('/admin/courses', payload)
     },
+    toggleCourse(courseId, isEnabled) {
+        return USE_MOCK ? mock({ ok: true }) : http.post(`/admin/courses/${courseId}/toggle`, { is_enabled: isEnabled })
+    },
     classrooms() {
         return USE_MOCK ? mock(M.adminClassrooms) : http.get('/admin/classrooms')
     },
@@ -151,6 +154,15 @@ export const adminApi = {
     },
     saveOffering(payload) {
         return USE_MOCK ? mock({ ok: true }) : http.post('/admin/offerings', payload)
+    },
+    toggleOfferingEnrollment(offeringId) {
+        return USE_MOCK ? mock({ ok: true }) : http.post(`/admin/offerings/${offeringId}/toggle-enrollment`)
+    },
+    cancelOffering(offeringId) {
+        return USE_MOCK ? mock({ ok: true }) : http.post(`/admin/offerings/${offeringId}/cancel`)
+    },
+    updateOffering(offeringId, payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.put(`/admin/offerings/${offeringId}`, payload)
     },
     approvals() {
         return USE_MOCK ? mock(M.adminApprovals) : http.get('/admin/approvals')

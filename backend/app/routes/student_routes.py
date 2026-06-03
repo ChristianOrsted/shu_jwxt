@@ -82,6 +82,7 @@ def get_courses():
         LEFT JOIN ClassSchedules cs ON co.offering_id = cs.offering_id
         LEFT JOIN Classrooms cr ON cs.classroom_id = cr.classroom_id
         WHERE co.term_id = %s AND co.status IN ('开放选课')
+          AND c.is_enabled = TRUE
         GROUP BY co.offering_id
         """
         cursor.execute(sql, (term_id,))

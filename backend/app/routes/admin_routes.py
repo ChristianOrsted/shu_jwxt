@@ -348,6 +348,34 @@ def create_or_update_course():
             return error_response(400, f"课程号 {course_code} 已存在")
 
 
+@admin_bp.route('/courses/<int:course_id>/toggle', methods=['POST'])
+@role_required('admin')
+def toggle_course_enabled(course_id):
+    """启用/停用课程"""
+    data = request.get_json() or {}
+    is_enabled = bool(data.get('is_enabled'))
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT course_code FROM Courses WHERE course_id=%s", (course_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "课程不存在")
+
+        cursor.execute(
+            "UPDATE Courses SET is_enabled=%s WHERE course_id=%s",
+            (is_enabled, course_id),
+        )
+
+        # 写入审计日志，便于追溯启停操作
+        cursor.execute("""
+            INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
+            VALUES ('admin', %s, '课程', %s, %s)
+        """, ('启用课程' if is_enabled else '停用课程', course_id,
+              f"管理员{'启用' if is_enabled else '停用'}课程 {row['course_code']}"))
+
+        return success_response(message="课程已启用" if is_enabled else "课程已停用")
+
+
 @admin_bp.route('/classrooms', methods=['GET'])
 @role_required('admin')
 def get_classrooms():
@@ -374,11 +402,18 @@ def get_offerings():
             co.offering_id, c.course_name, t.real_name as teacher_name,
             term.term_name, co.teaching_class_name,
             co.capacity, co.selected_count_cached as selected_count,
-            co.min_enrollment, co.is_retake_class, co.status
+            co.min_enrollment, co.is_retake_class, co.status,
+            GROUP_CONCAT(
+                CONCAT('周', cs.weekday, ' ', cs.start_section, '-', cs.end_section,
+                       '节[', cs.week_start, '-', cs.week_end, '周]')
+                ORDER BY cs.weekday, cs.start_section SEPARATOR ' / '
+            ) as schedule_text
         FROM CourseOfferings co
         JOIN Courses c ON co.course_id = c.course_id
         JOIN Teachers t ON co.teacher_id = t.teacher_id
         JOIN Terms term ON co.term_id = term.term_id
+        LEFT JOIN ClassSchedules cs ON co.offering_id = cs.offering_id
+        GROUP BY co.offering_id
         ORDER BY term.term_id DESC, co.offering_id
         """
         cursor.execute(sql)
@@ -446,11 +481,47 @@ def create_offering():
     capacity = data.get('capacity')
     min_enrollment = data.get('min_enrollment', 10)
     is_retake_class = data.get('is_retake_class', False)
+    # 上课时间（可多段），每段：weekday/start_section/end_section/week_start/week_end/classroom_id
+    schedules = data.get('schedules') or []
 
     if not all([course_id, teacher_id, term_id, teaching_class_name, capacity]):
         return error_response(400, "请填写完整信息")
 
+    # 先校验排课明细，避免插入一半再回滚
+    cleaned_schedules = []
+    for idx, s in enumerate(schedules, start=1):
+        try:
+            weekday = int(s.get('weekday'))
+            start_section = int(s.get('start_section'))
+            end_section = int(s.get('end_section'))
+            week_start = int(s.get('week_start', 1))
+            week_end = int(s.get('week_end', 18))
+        except (TypeError, ValueError):
+            return error_response(400, f"第 {idx} 个上课时间填写不完整")
+        classroom_id = s.get('classroom_id') or None
+
+        if not (1 <= weekday <= 7):
+            return error_response(400, f"第 {idx} 个上课时间的星期不合法")
+        if not (1 <= start_section <= end_section <= 10):
+            return error_response(400, f"第 {idx} 个上课时间的节次不合法")
+        if not (1 <= week_start <= week_end <= 30):
+            return error_response(400, f"第 {idx} 个上课时间的周次不合法")
+        cleaned_schedules.append(
+            (weekday, start_section, end_section, week_start, week_end, classroom_id)
+        )
+
     with get_db_cursor(commit=True) as cursor:
+        # 已停用的课程不允许新开课
+        cursor.execute(
+            "SELECT course_name, is_enabled FROM Courses WHERE course_id=%s",
+            (course_id,),
+        )
+        course = cursor.fetchone()
+        if not course:
+            return error_response(404, "课程不存在")
+        if not course['is_enabled']:
+            return error_response(400, f"课程「{course['course_name']}」已停用，不能开课")
+
         cursor.execute("""
             INSERT INTO CourseOfferings
                 (course_id, teacher_id, term_id, teaching_class_name,
@@ -458,7 +529,142 @@ def create_offering():
             VALUES (%s, %s, %s, %s, %s, %s, %s, '开放选课')
         """, (course_id, teacher_id, term_id, teaching_class_name,
               capacity, min_enrollment, is_retake_class))
+        offering_id = cursor.lastrowid
+
+        # 写入排课明细
+        for (weekday, start_section, end_section,
+             week_start, week_end, classroom_id) in cleaned_schedules:
+            cursor.execute("""
+                INSERT INTO ClassSchedules
+                    (offering_id, classroom_id, weekday,
+                     start_section, end_section, week_start, week_end)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (offering_id, classroom_id, weekday,
+                  start_section, end_section, week_start, week_end))
+
         return success_response(message="开课班创建成功")
+
+
+@admin_bp.route('/offerings/<int:offering_id>/toggle-enrollment', methods=['POST'])
+@role_required('admin')
+def toggle_offering_enrollment(offering_id):
+    """开放/关闭开课班的选课"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("""
+            SELECT co.status, co.teaching_class_name
+            FROM CourseOfferings co WHERE co.offering_id=%s
+        """, (offering_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "开课班不存在")
+        if row['status'] not in ('开放选课', '关闭选课'):
+            return error_response(400, f"当前状态为「{row['status']}」，不能切换选课开关")
+
+        new_status = '关闭选课' if row['status'] == '开放选课' else '开放选课'
+        cursor.execute(
+            "UPDATE CourseOfferings SET status=%s WHERE offering_id=%s",
+            (new_status, offering_id),
+        )
+
+        # 写入审计日志，便于追溯开放/关闭操作
+        cursor.execute("""
+            INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
+            VALUES ('admin', %s, '开课班', %s, %s)
+        """, ('开放选课' if new_status == '开放选课' else '关闭选课', offering_id,
+              f"管理员{'开放' if new_status == '开放选课' else '关闭'}教学班 {row['teaching_class_name']} 的选课"))
+
+        return success_response(
+            {'status': new_status},
+            message="已开放该课程选课" if new_status == '开放选课' else "已关闭该课程选课",
+        )
+
+
+@admin_bp.route('/offerings/<int:offering_id>/cancel', methods=['POST'])
+@role_required('admin')
+def cancel_offering(offering_id):
+    """取消开课班（仅当选课人数低于最低开课人数时允许）"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("""
+            SELECT status, teaching_class_name,
+                   selected_count_cached, min_enrollment
+            FROM CourseOfferings WHERE offering_id=%s
+        """, (offering_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "开课班不存在")
+        if row['status'] == '已取消':
+            return error_response(400, "该开课班已取消")
+        # 服务端再次校验，防止绕过前端按钮的 disabled 限制
+        if row['selected_count_cached'] >= row['min_enrollment']:
+            return error_response(
+                400,
+                f"选课人数已达最低开课人数（{row['min_enrollment']}人），不能取消",
+            )
+
+        cursor.execute(
+            "UPDATE CourseOfferings SET status='已取消' WHERE offering_id=%s",
+            (offering_id,),
+        )
+
+        # 写入审计日志
+        cursor.execute("""
+            INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
+            VALUES ('admin', '取消开课', '开课班', %s, %s)
+        """, (offering_id,
+              f"管理员取消教学班 {row['teaching_class_name']}（选课{row['selected_count_cached']}人 < 最低{row['min_enrollment']}人）"))
+
+        return success_response(message="课程已取消")
+
+
+@admin_bp.route('/offerings/<int:offering_id>', methods=['PUT'])
+@role_required('admin')
+def update_offering(offering_id):
+    """编辑开课班（仅容量与最低开课人数）"""
+    data = request.get_json() or {}
+    try:
+        capacity = int(data.get('capacity'))
+        min_enrollment = int(data.get('min_enrollment'))
+    except (TypeError, ValueError):
+        return error_response(400, "容量与最低开课人数必须为整数")
+
+    if capacity < 1 or min_enrollment < 1:
+        return error_response(400, "容量与最低开课人数必须大于 0")
+    if min_enrollment > capacity:
+        return error_response(400, "最低开课人数不能大于容量")
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("""
+            SELECT status, teaching_class_name,
+                   selected_count_cached, capacity, min_enrollment
+            FROM CourseOfferings WHERE offering_id=%s
+        """, (offering_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "开课班不存在")
+        # 仅开放/关闭选课状态允许编辑
+        if row['status'] not in ('开放选课', '关闭选课'):
+            return error_response(400, f"当前状态为「{row['status']}」，不能编辑")
+        # 容量不能小于已选人数
+        if capacity < row['selected_count_cached']:
+            return error_response(
+                400,
+                f"容量不能小于已选人数（已选 {row['selected_count_cached']} 人）",
+            )
+
+        cursor.execute("""
+            UPDATE CourseOfferings SET capacity=%s, min_enrollment=%s
+            WHERE offering_id=%s
+        """, (capacity, min_enrollment, offering_id))
+
+        # 写入审计日志，记录调整前后的值
+        cursor.execute("""
+            INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
+            VALUES ('admin', '编辑开课', '开课班', %s, %s)
+        """, (offering_id,
+              f"管理员编辑教学班 {row['teaching_class_name']}："
+              f"容量 {row['capacity']}→{capacity}，最低人数 {row['min_enrollment']}→{min_enrollment}"))
+
+        return success_response(message="开课班已更新")
 
 
 @admin_bp.route('/approvals', methods=['GET'])

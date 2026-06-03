@@ -19,7 +19,13 @@ const filtered = computed(() =>
 async function load() {
     loading.value = true
     try {
-        courses.value = await adminApi.courses()
+        const list = await adminApi.courses()
+        // MySQL 的 BOOLEAN 会以 0/1 返回，转成真正的布尔值，el-switch 才能正确显示
+        courses.value = list.map((c) => ({
+            ...c,
+            is_enabled: Boolean(c.is_enabled),
+            allow_retake: Boolean(c.allow_retake),
+        }))
     } finally {
         loading.value = false
     }
@@ -45,6 +51,17 @@ async function save() {
     dialogVisible.value = false
     ElMessage.success('保存成功')
     await load()
+}
+
+async function toggleEnabled(row) {
+    try {
+        await adminApi.toggleCourse(row.course_id, row.is_enabled)
+        ElMessage.success(row.is_enabled ? '课程已启用' : '课程已停用')
+    } catch (e) {
+        // 调用失败时回滚开关状态，保持与后端一致
+        row.is_enabled = !row.is_enabled
+        ElMessage.error('操作失败，请重试')
+    }
 }
 onMounted(load)
 </script>
@@ -76,7 +93,7 @@ onMounted(load)
                 </template>
             </el-table-column>
             <el-table-column label="启用" width="90" align="center">
-                <template #default="{ row }"><el-switch v-model="row.is_enabled" /></template>
+                <template #default="{ row }"><el-switch v-model="row.is_enabled" @change="toggleEnabled(row)" /></template>
             </el-table-column>
             <el-table-column label="操作" width="100" align="center" fixed="right">
                 <template #default="{ row }"><el-button size="small" @click="openEdit(row)">编辑</el-button></template>
