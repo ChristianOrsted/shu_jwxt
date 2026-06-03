@@ -27,6 +27,12 @@ function setCurrent(term) {
     ElMessage.success(`已将「${term.term_name}」设为当前学期`)
 }
 onMounted(load)
+
+function formatTime(val) {
+    if (!val) return ''
+    const d = new Date(val)
+    return d.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+}
 </script>
 
 <template>
@@ -68,10 +74,10 @@ onMounted(load)
                 </el-table-column>
                 <el-table-column prop="term_name" label="学期" min-width="180" />
                 <el-table-column label="开始时间" width="180">
-                    <template #default="{ row }">{{ row.start_time.replace('T', ' ') }}</template>
+                    <template #default="{ row }">{{ formatTime(row.start_time) }}</template>
                 </el-table-column>
                 <el-table-column label="结束时间" width="180">
-                    <template #default="{ row }">{{ row.end_time.replace('T', ' ') }}</template>
+                    <template #default="{ row }">{{ formatTime(row.end_time) }}</template>
                 </el-table-column>
                 <el-table-column label="状态" width="100" align="center">
                     <template #default="{ row }"><el-tag :type="winStatus[row.status]">{{ row.status }}</el-tag></template>

@@ -62,7 +62,7 @@ def get_statistics():
             FROM Grades g
             WHERE g.score_status = '已发布'
             GROUP BY `range`
-            ORDER BY g.total_score DESC
+            ORDER BY MIN(g.total_score) DESC
         """)
         score_distribution = cursor.fetchall()
 
@@ -103,18 +103,27 @@ def get_users():
     """获取用户列表"""
     with get_db_cursor(commit=False) as cursor:
         sql = """
-        SELECT user_id, username, real_name, role,
-               CASE role
+        SELECT u.user_id, u.username, u.real_name, u.role,
+               CASE u.role
                    WHEN 'student' THEN '学生'
                    WHEN 'teacher' THEN '教师'
                    WHEN 'admin' THEN '管理员'
                END as role_name,
                COALESCE(s.phone, t.phone, '') as phone,
-               status
+               COALESCE(s.gender, t.gender) as gender,
+               COALESCE(s.department_id, t.department_id) as department_id,
+               COALESCE(d.department_name, '') as department_name,
+               t.title,
+               s.major_id, COALESCE(m.major_name, '') as major_name,
+               s.class_id, COALESCE(cl.class_name, '') as class_name,
+               u.status
         FROM Users u
         LEFT JOIN Students s ON u.user_id = s.user_id
         LEFT JOIN Teachers t ON u.user_id = t.user_id
-        ORDER BY user_id
+        LEFT JOIN Departments d ON COALESCE(s.department_id, t.department_id) = d.department_id
+        LEFT JOIN Majors m ON s.major_id = m.major_id
+        LEFT JOIN Classes cl ON s.class_id = cl.class_id
+        ORDER BY u.user_id
         """
         cursor.execute(sql)
         users = cursor.fetchall()
@@ -132,19 +141,40 @@ def create_or_update_user():
     real_name = data.get('real_name')
     role = data.get('role')
     phone = data.get('phone')
+    # 角色相关字段
+    gender = data.get('gender') or None
+    department_id = data.get('department_id') or None
+    title = data.get('title') or None          # 教师职称
+    major_id = data.get('major_id') or None     # 学生专业
+    class_id = data.get('class_id') or None      # 学生班级
 
     if not all([username, real_name, role]):
         return error_response(400, "参数不完整")
 
     with get_db_cursor(commit=True) as cursor:
         if user_id:
-            # 编辑
+            # 编辑：更新 Users，并把信息同步到对应的角色表
             cursor.execute("""
                 UPDATE Users SET username=%s, real_name=%s, role=%s
                 WHERE user_id=%s
             """, (username, real_name, role, user_id))
+            cursor.execute("""
+                UPDATE Teachers
+                SET real_name=%s, phone=%s, gender=%s, department_id=%s, title=%s
+                WHERE user_id=%s
+            """, (real_name, phone, gender, department_id, title, user_id))
+            cursor.execute("""
+                UPDATE Students
+                SET real_name=%s, phone=%s, gender=%s,
+                    department_id=%s, major_id=%s, class_id=%s
+                WHERE user_id=%s
+            """, (real_name, phone, gender, department_id, major_id, class_id, user_id))
         else:
-            # 新增 - 简化版，实际应该同时创建对应的 Students/Teachers 记录
+            # 新增：先查重，避免插入一半留下孤儿数据
+            cursor.execute("SELECT user_id FROM Users WHERE username=%s", (username,))
+            if cursor.fetchone():
+                return error_response(400, f"用户名 {username} 已存在")
+
             from werkzeug.security import generate_password_hash
             password_hash = generate_password_hash('123456')
 
@@ -152,8 +182,54 @@ def create_or_update_user():
                 INSERT INTO Users (username, password_hash, real_name, role, status)
                 VALUES (%s, %s, %s, %s, '正常')
             """, (username, password_hash, real_name, role))
+            new_user_id = cursor.lastrowid
+
+            if role == 'teacher':
+                # 工号沿用用户名
+                cursor.execute("""
+                    INSERT INTO Teachers
+                        (user_id, teacher_no, real_name, phone, gender, department_id, title)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (new_user_id, username, real_name, phone, gender, department_id, title))
+            elif role == 'student':
+                # 学号沿用用户名
+                cursor.execute("""
+                    INSERT INTO Students
+                        (user_id, student_no, real_name, phone, gender,
+                         department_id, major_id, class_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (new_user_id, username, real_name, phone, gender,
+                      department_id, major_id, class_id))
 
         return success_response(message="操作成功")
+
+
+@admin_bp.route('/users/<int:user_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_user(user_id):
+    """删除用户（级联删除对应的 Teachers/Students 记录）"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT role FROM Users WHERE user_id=%s", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "用户不存在")
+        if row['role'] == 'admin':
+            return error_response(400, "管理员账号不可删除")
+
+        # 教师若已有开课班，禁止删除（避免级联清空开课/选课/成绩数据）
+        if row['role'] == 'teacher':
+            cursor.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM CourseOfferings co
+                JOIN Teachers t ON co.teacher_id = t.teacher_id
+                WHERE t.user_id = %s
+            """, (user_id,))
+            if cursor.fetchone()['cnt'] > 0:
+                return error_response(400, "该教师已有开课班，请先取消其开课后再删除")
+
+        # 删除 Users，外键 ON DELETE CASCADE 会自动清理 Teachers/Students
+        cursor.execute("DELETE FROM Users WHERE user_id=%s", (user_id,))
+        return success_response(message="删除成功")
 
 
 @admin_bp.route('/terms', methods=['GET'])
@@ -234,8 +310,42 @@ def get_courses():
 def create_or_update_course():
     """新增或编辑课程"""
     data = request.get_json()
-    # 简化实现
-    return success_response(message="操作成功")
+    course_id = data.get('course_id')
+    course_code = (data.get('course_code') or '').strip()
+    course_name = (data.get('course_name') or '').strip()
+    credits = data.get('credits')
+    hours = data.get('hours')
+    course_type = data.get('course_type')
+    assessment_type = data.get('assessment_type', '考试')
+    allow_retake = bool(data.get('allow_retake', True))
+    is_enabled = bool(data.get('is_enabled', True))
+
+    if not all([course_code, course_name, credits, hours, course_type]):
+        return error_response(400, "请填写完整的课程信息")
+
+    with get_db_cursor(commit=True) as cursor:
+        try:
+            if course_id:
+                # 编辑
+                cursor.execute("""
+                    UPDATE Courses
+                    SET course_code=%s, course_name=%s, credits=%s, hours=%s,
+                        course_type=%s, assessment_type=%s, allow_retake=%s, is_enabled=%s
+                    WHERE course_id=%s
+                """, (course_code, course_name, credits, hours, course_type,
+                      assessment_type, allow_retake, is_enabled, course_id))
+            else:
+                # 新增
+                cursor.execute("""
+                    INSERT INTO Courses
+                        (course_code, course_name, credits, hours,
+                         course_type, assessment_type, allow_retake, is_enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (course_code, course_name, credits, hours, course_type,
+                      assessment_type, allow_retake, is_enabled))
+            return success_response(message="操作成功")
+        except pymysql.err.IntegrityError:
+            return error_response(400, f"课程号 {course_code} 已存在")
 
 
 @admin_bp.route('/classrooms', methods=['GET'])
@@ -277,12 +387,78 @@ def get_offerings():
         return success_response(offerings)
 
 
+@admin_bp.route('/departments', methods=['GET'])
+@role_required('admin')
+def get_departments():
+    """获取院系列表"""
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT department_id, department_name FROM Departments ORDER BY department_id")
+        return success_response(cursor.fetchall())
+
+
+@admin_bp.route('/majors', methods=['GET'])
+@role_required('admin')
+def get_majors():
+    """获取专业列表（含所属院系，便于级联筛选）"""
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("""
+            SELECT major_id, major_name, department_id
+            FROM Majors ORDER BY major_id
+        """)
+        return success_response(cursor.fetchall())
+
+
+@admin_bp.route('/classes', methods=['GET'])
+@role_required('admin')
+def get_classes():
+    """获取班级列表（含所属专业，便于级联筛选）"""
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("""
+            SELECT class_id, class_name, major_id, grade_year
+            FROM Classes ORDER BY class_id
+        """)
+        return success_response(cursor.fetchall())
+
+
+@admin_bp.route('/teachers', methods=['GET'])
+@role_required('admin')
+def get_teachers():
+    """获取教师列表（用于下拉选择）"""
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("""
+            SELECT t.teacher_id, t.real_name, t.teacher_no, d.department_name
+            FROM Teachers t
+            LEFT JOIN Departments d ON t.department_id = d.department_id
+            ORDER BY t.teacher_id
+        """)
+        return success_response(cursor.fetchall())
+
+
 @admin_bp.route('/offerings', methods=['POST'])
 @role_required('admin')
 def create_offering():
     """新增开课"""
-    # 简化实现
-    return success_response(message="操作成功")
+    data = request.get_json()
+    course_id = data.get('course_id')
+    teacher_id = data.get('teacher_id')
+    term_id = data.get('term_id')
+    teaching_class_name = data.get('teaching_class_name', '').strip()
+    capacity = data.get('capacity')
+    min_enrollment = data.get('min_enrollment', 10)
+    is_retake_class = data.get('is_retake_class', False)
+
+    if not all([course_id, teacher_id, term_id, teaching_class_name, capacity]):
+        return error_response(400, "请填写完整信息")
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("""
+            INSERT INTO CourseOfferings
+                (course_id, teacher_id, term_id, teaching_class_name,
+                 capacity, min_enrollment, is_retake_class, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, '开放选课')
+        """, (course_id, teacher_id, term_id, teaching_class_name,
+              capacity, min_enrollment, is_retake_class))
+        return success_response(message="开课班创建成功")
 
 
 @admin_bp.route('/approvals', methods=['GET'])

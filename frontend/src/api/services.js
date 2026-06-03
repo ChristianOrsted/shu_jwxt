@@ -8,7 +8,7 @@
 import http from './index'
 import * as M from './mock'
 
-export const USE_MOCK = true
+export const USE_MOCK = false
 
 // 模拟网络延迟，返回数据副本
 function mock(data, delay = 200) {
@@ -116,6 +116,9 @@ export const adminApi = {
     saveUser(payload) {
         return USE_MOCK ? mock({ ok: true }) : http.post('/admin/users', payload)
     },
+    deleteUser(userId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/users/${userId}`)
+    },
     terms() {
         return USE_MOCK ? mock(M.adminTerms) : http.get('/admin/terms')
     },
@@ -130,6 +133,18 @@ export const adminApi = {
     },
     classrooms() {
         return USE_MOCK ? mock(M.adminClassrooms) : http.get('/admin/classrooms')
+    },
+    teachers() {
+        return USE_MOCK ? mock([]) : http.get('/admin/teachers')
+    },
+    departments() {
+        return USE_MOCK ? mock([]) : http.get('/admin/departments')
+    },
+    majors() {
+        return USE_MOCK ? mock([]) : http.get('/admin/majors')
+    },
+    classes() {
+        return USE_MOCK ? mock([]) : http.get('/admin/classes')
     },
     offerings() {
         return USE_MOCK ? mock(M.adminOfferings) : http.get('/admin/offerings')

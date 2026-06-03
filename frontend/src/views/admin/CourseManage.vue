@@ -42,14 +42,9 @@ async function save() {
         return
     }
     await adminApi.saveCourse({ ...form })
-    if (isEdit.value) {
-        const idx = courses.value.findIndex((c) => c.course_id === form.course_id)
-        if (idx > -1) courses.value[idx] = { ...form }
-    } else {
-        courses.value.unshift({ ...form, course_id: Date.now() })
-    }
     dialogVisible.value = false
     ElMessage.success('保存成功')
+    await load()
 }
 onMounted(load)
 </script>
@@ -98,8 +93,8 @@ onMounted(load)
                     <el-select v-model="form.course_type" style="width: 100%">
                         <el-option label="必修课" value="必修课" />
                         <el-option label="选修课" value="选修课" />
+                        <el-option label="专业课" value="专业课" />
                         <el-option label="通识课" value="通识课" />
-                        <el-option label="实践课" value="实践课" />
                     </el-select>
                 </el-form-item>
                 <el-form-item label="考核方式">

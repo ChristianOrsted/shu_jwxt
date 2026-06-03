@@ -10,9 +10,33 @@ const roleFilter = ref('')
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 
-const form = reactive({ user_id: null, username: '', real_name: '', role: 'student', phone: '', status: '正常' })
+const departments = ref([])
+const majors = ref([])
+const classes = ref([])
+
+const blank = () => ({
+    user_id: null, username: '', real_name: '', role: 'student', phone: '', status: '正常',
+    gender: '', department_id: null, title: '', major_id: null, class_id: null,
+})
+const form = reactive(blank())
 
 const roleLabel = { student: '学生', teacher: '教师', admin: '管理员' }
+
+// 级联：专业按所选院系过滤，班级按所选专业过滤
+const filteredMajors = computed(() =>
+    form.department_id ? majors.value.filter((m) => m.department_id === form.department_id) : majors.value,
+)
+const filteredClasses = computed(() =>
+    form.major_id ? classes.value.filter((c) => c.major_id === form.major_id) : classes.value,
+)
+
+function onDepartmentChange() {
+    form.major_id = null
+    form.class_id = null
+}
+function onMajorChange() {
+    form.class_id = null
+}
 
 const filtered = computed(() =>
     users.value.filter((u) => {
@@ -33,12 +57,12 @@ async function load() {
 
 function openCreate() {
     isEdit.value = false
-    Object.assign(form, { user_id: null, username: '', real_name: '', role: 'student', phone: '', status: '正常' })
+    Object.assign(form, blank())
     dialogVisible.value = true
 }
 function openEdit(row) {
     isEdit.value = true
-    Object.assign(form, row)
+    Object.assign(form, blank(), row)
     dialogVisible.value = true
 }
 
@@ -48,14 +72,9 @@ async function save() {
         return
     }
     await adminApi.saveUser({ ...form })
-    if (isEdit.value) {
-        const idx = users.value.findIndex((u) => u.user_id === form.user_id)
-        if (idx > -1) users.value[idx] = { ...form, role_name: roleLabel[form.role] }
-    } else {
-        users.value.unshift({ ...form, user_id: Date.now(), role_name: roleLabel[form.role] })
-    }
     dialogVisible.value = false
     ElMessage.success('保存成功')
+    await load()
 }
 
 function toggleStatus(row) {
@@ -67,7 +86,28 @@ async function resetPwd(row) {
     await ElMessageBox.confirm(`将 ${row.username} 的密码重置为 123456？`, '重置密码', { type: 'warning' })
     ElMessage.success('密码已重置为 123456')
 }
-onMounted(load)
+
+async function remove(row) {
+    await ElMessageBox.confirm(`确认删除用户「${row.real_name}（${row.username}）」？此操作不可恢复。`, '删除用户', {
+        type: 'warning',
+        confirmButtonText: '删除',
+        confirmButtonClass: 'el-button--danger',
+    })
+    await adminApi.deleteUser(row.user_id)
+    ElMessage.success('删除成功')
+    await load()
+}
+async function loadOptions() {
+    const [d, m, c] = await Promise.all([adminApi.departments(), adminApi.majors(), adminApi.classes()])
+    departments.value = d
+    majors.value = m
+    classes.value = c
+}
+
+onMounted(() => {
+    load()
+    loadOptions()
+})
 </script>
 
 <template>
@@ -92,20 +132,22 @@ onMounted(load)
         <el-table :data="filtered" v-loading="loading" border stripe>
             <el-table-column prop="username" label="用户名" width="130" />
             <el-table-column prop="real_name" label="姓名" width="120" />
-            <el-table-column prop="role_name" label="角色" width="100" align="center" />
-            <el-table-column prop="phone" label="手机号" width="150" />
+            <el-table-column prop="role_name" label="角色" width="90" align="center" />
+            <el-table-column prop="department_name" label="院系" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="phone" label="手机号" width="140" />
             <el-table-column label="状态" width="90" align="center">
                 <template #default="{ row }">
                     <el-tag :type="row.status === '正常' ? 'success' : 'danger'">{{ row.status }}</el-tag>
                 </template>
             </el-table-column>
-            <el-table-column label="操作" width="260" fixed="right">
+            <el-table-column label="操作" width="320" fixed="right">
                 <template #default="{ row }">
                     <el-button size="small" @click="openEdit(row)">编辑</el-button>
                     <el-button size="small" type="warning" @click="resetPwd(row)">重置密码</el-button>
                     <el-button size="small" :type="row.status === '正常' ? 'danger' : 'success'" @click="toggleStatus(row)">
                         {{ row.status === '正常' ? '禁用' : '启用' }}
                     </el-button>
+                    <el-button v-if="row.role !== 'admin'" size="small" type="danger" plain @click="remove(row)">删除</el-button>
                 </template>
             </el-table-column>
         </el-table>
@@ -121,6 +163,47 @@ onMounted(load)
                         <el-option label="管理员" value="admin" />
                     </el-select>
                 </el-form-item>
+
+                <el-form-item v-if="form.role !== 'admin'" label="性别">
+                    <el-radio-group v-model="form.gender">
+                        <el-radio value="男">男</el-radio>
+                        <el-radio value="女">女</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+
+                <el-form-item v-if="form.role !== 'admin'" label="院系">
+                    <el-select v-model="form.department_id" placeholder="请选择院系" clearable
+                               style="width: 100%" @change="onDepartmentChange">
+                        <el-option v-for="d in departments" :key="d.department_id"
+                                   :label="d.department_name" :value="d.department_id" />
+                    </el-select>
+                </el-form-item>
+
+                <el-form-item v-if="form.role === 'teacher'" label="职称">
+                    <el-select v-model="form.title" placeholder="请选择职称" clearable style="width: 100%">
+                        <el-option label="教授" value="教授" />
+                        <el-option label="副教授" value="副教授" />
+                        <el-option label="讲师" value="讲师" />
+                        <el-option label="助教" value="助教" />
+                    </el-select>
+                </el-form-item>
+
+                <template v-if="form.role === 'student'">
+                    <el-form-item label="专业">
+                        <el-select v-model="form.major_id" placeholder="请先选择院系" clearable
+                                   style="width: 100%" @change="onMajorChange">
+                            <el-option v-for="m in filteredMajors" :key="m.major_id"
+                                       :label="m.major_name" :value="m.major_id" />
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item label="班级">
+                        <el-select v-model="form.class_id" placeholder="请先选择专业" clearable style="width: 100%">
+                            <el-option v-for="c in filteredClasses" :key="c.class_id"
+                                       :label="c.class_name" :value="c.class_id" />
+                        </el-select>
+                    </el-form-item>
+                </template>
+
                 <el-form-item label="手机号"><el-input v-model="form.phone" /></el-form-item>
             </el-form>
             <template #footer>
