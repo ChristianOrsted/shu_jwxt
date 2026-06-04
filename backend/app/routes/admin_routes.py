@@ -393,6 +393,69 @@ def get_classrooms():
         return success_response(classrooms)
 
 
+@admin_bp.route('/classrooms', methods=['POST'])
+@role_required('admin')
+def create_or_update_classroom():
+    """新增或编辑教室"""
+    data = request.get_json() or {}
+    classroom_id = data.get('classroom_id')
+    building = (data.get('building') or '').strip()
+    room_no = (data.get('room_no') or '').strip()
+    status = data.get('status') or '可用'
+    try:
+        capacity = int(data.get('capacity'))
+    except (TypeError, ValueError):
+        return error_response(400, "容量必须为整数")
+
+    if not building or not room_no:
+        return error_response(400, "请填写教学楼与教室号")
+    if capacity < 1:
+        return error_response(400, "容量必须大于 0")
+    if status not in ('可用', '维修中', '停用'):
+        return error_response(400, "教室状态不合法")
+
+    with get_db_cursor(commit=True) as cursor:
+        # 教学楼+教室号查重（排除自身），对应唯一约束 uk_building_room
+        cursor.execute(
+            "SELECT classroom_id FROM Classrooms "
+            "WHERE building=%s AND room_no=%s AND classroom_id<>%s",
+            (building, room_no, classroom_id or 0),
+        )
+        if cursor.fetchone():
+            return error_response(400, f"教室 {building}{room_no} 已存在")
+
+        if classroom_id:
+            cursor.execute(
+                "UPDATE Classrooms SET building=%s, room_no=%s, capacity=%s, status=%s "
+                "WHERE classroom_id=%s",
+                (building, room_no, capacity, status, classroom_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO Classrooms (building, room_no, capacity, status) "
+                "VALUES (%s, %s, %s, %s)",
+                (building, room_no, capacity, status),
+            )
+        return success_response(message="操作成功")
+
+
+@admin_bp.route('/classrooms/<int:classroom_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_classroom(classroom_id):
+    """删除教室——仍被排课引用时禁止删除"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) AS c FROM ClassSchedules WHERE classroom_id=%s",
+            (classroom_id,),
+        )
+        used = cursor.fetchone()['c']
+        if used:
+            return error_response(400, f"该教室仍被 {used} 条排课使用，无法删除")
+
+        cursor.execute("DELETE FROM Classrooms WHERE classroom_id=%s", (classroom_id,))
+        return success_response(message="删除成功")
+
+
 @admin_bp.route('/offerings', methods=['GET'])
 @role_required('admin')
 def get_offerings():

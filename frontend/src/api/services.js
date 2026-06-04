@@ -137,6 +137,12 @@ export const adminApi = {
     classrooms() {
         return USE_MOCK ? mock(M.adminClassrooms) : http.get('/admin/classrooms')
     },
+    saveClassroom(payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.post('/admin/classrooms', payload)
+    },
+    deleteClassroom(classroomId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/classrooms/${classroomId}`)
+    },
     teachers() {
         return USE_MOCK ? mock([]) : http.get('/admin/teachers')
     },
