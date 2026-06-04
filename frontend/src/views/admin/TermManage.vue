@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi } from '@/api/services'
 
@@ -9,6 +9,65 @@ const windows = ref([])
 
 const winType = { 选课: 'success', 退课: 'warning', 成绩录入: 'primary', 成绩公布: 'info' }
 const winStatus = { 进行中: 'success', 未开始: 'info', 已结束: 'danger' }
+const windowTypeOptions = Object.keys(winType)
+
+// 当前学期（跨学年查找 is_current 的那个）及其业务时间窗口
+const currentTerm = computed(() => {
+    for (const y of years.value) {
+        const t = (y.terms || []).find((x) => x.is_current)
+        if (t) return t
+    }
+    return null
+})
+const currentWindows = computed(() =>
+    currentTerm.value ? windows.value.filter((w) => w.term_id === currentTerm.value.term_id) : [],
+)
+
+// 编辑业务时间窗口起止时间
+const editVisible = ref(false)
+const editSaving = ref(false)
+const editForm = reactive({ window_id: null, window_type: '', term_name: '', start_time: '', end_time: '' })
+
+// 后端可能返回 ISO（含 T）或空格分隔，统一规整为 'YYYY-MM-DD HH:mm:ss' 供日期选择器使用
+function toPickerStr(val) {
+    if (!val) return ''
+    return String(val).replace('T', ' ').slice(0, 19)
+}
+
+function openEditWindow(row) {
+    Object.assign(editForm, {
+        window_id: row.window_id,
+        window_type: row.window_type,
+        term_name: row.term_name,
+        start_time: toPickerStr(row.start_time),
+        end_time: toPickerStr(row.end_time),
+    })
+    editVisible.value = true
+}
+
+async function saveWindow() {
+    if (!editForm.start_time || !editForm.end_time) {
+        ElMessage.warning('请选择开始时间与结束时间')
+        return
+    }
+    if (editForm.start_time >= editForm.end_time) {
+        ElMessage.warning('开始时间必须早于结束时间')
+        return
+    }
+    editSaving.value = true
+    try {
+        await adminApi.updateBusinessWindow(editForm.window_id, {
+            window_type: editForm.window_type,
+            start_time: editForm.start_time,
+            end_time: editForm.end_time,
+        })
+        ElMessage.success('业务时间窗口已更新')
+        editVisible.value = false
+        await load()
+    } finally {
+        editSaving.value = false
+    }
+}
 
 async function load() {
     loading.value = true
@@ -21,10 +80,14 @@ async function load() {
     }
 }
 
-function setCurrent(term) {
-    years.value.forEach((y) => y.terms.forEach((t) => (t.is_current = false)))
-    term.is_current = true
-    ElMessage.success(`已将「${term.term_name}」设为当前学期`)
+async function setCurrent(term) {
+    try {
+        await adminApi.setCurrentTerm(term.term_id)
+        ElMessage.success(`已将「${term.term_name}」设为当前学期`)
+        await load()
+    } catch (e) {
+        await load()
+    }
 }
 onMounted(load)
 
@@ -67,8 +130,13 @@ function formatTime(val) {
         </el-card>
 
         <el-card shadow="never">
-            <template #header><strong>当前学期业务时间窗口</strong></template>
-            <el-table :data="windows" border>
+            <template #header>
+                <strong>当前学期业务时间窗口</strong>
+                <el-tag v-if="currentTerm" type="success" effect="plain" style="margin-left: 8px">
+                    {{ currentTerm.term_name }}
+                </el-tag>
+            </template>
+            <el-table :data="currentWindows" border empty-text="当前学期暂无业务时间窗口">
                 <el-table-column label="业务类型" width="120" align="center">
                     <template #default="{ row }"><el-tag :type="winType[row.window_type]">{{ row.window_type }}</el-tag></template>
                 </el-table-column>
@@ -82,7 +150,39 @@ function formatTime(val) {
                 <el-table-column label="状态" width="100" align="center">
                     <template #default="{ row }"><el-tag :type="winStatus[row.status]">{{ row.status }}</el-tag></template>
                 </el-table-column>
+                <el-table-column label="操作" width="120" align="center">
+                    <template #default="{ row }">
+                        <el-button size="small" @click="openEditWindow(row)">修改时间</el-button>
+                    </template>
+                </el-table-column>
             </el-table>
         </el-card>
+
+        <el-dialog v-model="editVisible" title="修改业务时间窗口" width="460px">
+            <el-form :model="editForm" label-width="90px">
+                <el-form-item label="业务类型">
+                    <el-select v-model="editForm.window_type" style="width: 160px">
+                        <el-option v-for="ty in windowTypeOptions" :key="ty" :label="ty" :value="ty" />
+                    </el-select>
+                    <span style="margin-left: 8px; color: var(--el-text-color-secondary)">{{ editForm.term_name }}</span>
+                </el-form-item>
+                <el-form-item label="开始时间">
+                    <el-date-picker
+                        v-model="editForm.start_time" type="datetime"
+                        value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择开始时间" style="width: 100%"
+                    />
+                </el-form-item>
+                <el-form-item label="结束时间">
+                    <el-date-picker
+                        v-model="editForm.end_time" type="datetime"
+                        value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择结束时间" style="width: 100%"
+                    />
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="editVisible = false">取消</el-button>
+                <el-button type="primary" :loading="editSaving" @click="saveWindow">保存</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>

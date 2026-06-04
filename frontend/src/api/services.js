@@ -122,8 +122,14 @@ export const adminApi = {
     terms() {
         return USE_MOCK ? mock(M.adminTerms) : http.get('/admin/terms')
     },
+    setCurrentTerm(termId) {
+        return USE_MOCK ? mock({ ok: true }) : http.put(`/admin/terms/${termId}/set-current`)
+    },
     businessWindows() {
         return USE_MOCK ? mock(M.businessWindows) : http.get('/admin/business-windows')
+    },
+    updateBusinessWindow(windowId, payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.put(`/admin/business-windows/${windowId}`, payload)
     },
     courses() {
         return USE_MOCK ? mock(M.adminCourses) : http.get('/admin/courses')

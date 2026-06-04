@@ -369,10 +369,11 @@ export const adminTerms = [
 ]
 
 export const businessWindows = [
-    { window_id: 1, term_name: '2025-2026学年第二学期', window_type: '选课', start_time: '2026-02-18T09:00:00', end_time: '2026-03-01T22:00:00', status: '进行中' },
-    { window_id: 2, term_name: '2025-2026学年第二学期', window_type: '退课', start_time: '2026-02-18T09:00:00', end_time: '2026-03-08T22:00:00', status: '进行中' },
-    { window_id: 3, term_name: '2025-2026学年第二学期', window_type: '成绩录入', start_time: '2026-06-20T00:00:00', end_time: '2026-07-05T22:00:00', status: '未开始' },
-    { window_id: 4, term_name: '2025-2026学年第二学期', window_type: '成绩公布', start_time: '2026-07-08T00:00:00', end_time: '2026-07-15T22:00:00', status: '未开始' },
+    { window_id: 1, term_id: 4, term_name: '2025-2026学年第二学期', window_type: '选课', start_time: '2026-02-18T09:00:00', end_time: '2026-03-01T22:00:00', status: '进行中' },
+    { window_id: 2, term_id: 4, term_name: '2025-2026学年第二学期', window_type: '退课', start_time: '2026-02-18T09:00:00', end_time: '2026-03-08T22:00:00', status: '进行中' },
+    { window_id: 3, term_id: 4, term_name: '2025-2026学年第二学期', window_type: '成绩录入', start_time: '2026-06-20T00:00:00', end_time: '2026-07-05T22:00:00', status: '未开始' },
+    { window_id: 4, term_id: 4, term_name: '2025-2026学年第二学期', window_type: '成绩公布', start_time: '2026-07-08T00:00:00', end_time: '2026-07-15T22:00:00', status: '未开始' },
+    { window_id: 5, term_id: 3, term_name: '2025-2026学年第一学期', window_type: '选课', start_time: '2025-08-25T09:00:00', end_time: '2025-09-05T22:00:00', status: '已结束' },
 ]
 
 export const adminCourses = [

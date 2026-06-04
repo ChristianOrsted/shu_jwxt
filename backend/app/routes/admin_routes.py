@@ -266,14 +266,30 @@ def get_terms():
         return success_response(result)
 
 
+@admin_bp.route('/terms/<int:term_id>/set-current', methods=['PUT'])
+@role_required('admin')
+def set_current_term(term_id):
+    """将指定学期设为当前学期（互斥：其余学期自动取消当前标记）"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT term_name FROM Terms WHERE term_id=%s", (term_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "学期不存在")
+
+        # 一条语句完成互斥：匹配的学期置 1，其余置 0
+        cursor.execute("UPDATE Terms SET is_current = (term_id=%s)", (term_id,))
+        return success_response(message=f"已将「{row['term_name']}」设为当前学期")
+
+
 @admin_bp.route('/business-windows', methods=['GET'])
 @role_required('admin')
 def get_business_windows():
     """获取业务时间窗口"""
     with get_db_cursor(commit=False) as cursor:
         sql = """
-        SELECT bw.window_id, t.term_name, bw.window_type,
-               bw.start_time, bw.end_time,
+        SELECT bw.window_id, bw.term_id, t.term_name, bw.window_type,
+               DATE_FORMAT(bw.start_time, '%Y-%m-%d %H:%i:%s') AS start_time,
+               DATE_FORMAT(bw.end_time,   '%Y-%m-%d %H:%i:%s') AS end_time,
                CASE
                    WHEN NOW() < bw.start_time THEN '未开始'
                    WHEN NOW() > bw.end_time THEN '已结束'
@@ -287,6 +303,55 @@ def get_business_windows():
         windows = cursor.fetchall()
 
         return success_response(windows)
+
+
+WINDOW_TYPES = ('选课', '退课', '成绩录入', '成绩公布')
+
+
+@admin_bp.route('/business-windows/<int:window_id>', methods=['PUT'])
+@role_required('admin')
+def update_business_window(window_id):
+    """修改业务时间窗口的业务类型与开始/结束时间"""
+    data = request.get_json() or {}
+    window_type = (data.get('window_type') or '').strip()
+    start_time = (data.get('start_time') or '').strip()
+    end_time = (data.get('end_time') or '').strip()
+
+    if window_type not in WINDOW_TYPES:
+        return error_response(400, f"业务类型不合法（应为：{'/'.join(WINDOW_TYPES)}）")
+    if not start_time or not end_time:
+        return error_response(400, "请填写开始时间与结束时间")
+    try:
+        st = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+        et = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return error_response(400, "时间格式不正确（应为 YYYY-MM-DD HH:MM:SS）")
+    if st >= et:
+        return error_response(400, "开始时间必须早于结束时间")
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "SELECT term_id FROM BusinessWindows WHERE window_id=%s", (window_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "业务时间窗口不存在")
+
+        # 同一学期下同类型窗口不可重复，避免业务逻辑匹配到多条
+        cursor.execute(
+            "SELECT window_id FROM BusinessWindows "
+            "WHERE term_id=%s AND window_type=%s AND window_id<>%s",
+            (row['term_id'], window_type, window_id),
+        )
+        if cursor.fetchone():
+            return error_response(400, f"该学期已存在「{window_type}」窗口，不能重复")
+
+        cursor.execute(
+            "UPDATE BusinessWindows SET window_type=%s, start_time=%s, end_time=%s "
+            "WHERE window_id=%s",
+            (window_type, start_time, end_time, window_id),
+        )
+        return success_response(message="业务时间窗口已更新")
 
 
 @admin_bp.route('/courses', methods=['GET'])
