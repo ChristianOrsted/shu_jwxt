@@ -6,7 +6,7 @@
 from datetime import datetime
 from flask import request
 from app.routes import admin_bp
-from app.utils import success_response, error_response
+from app.utils import success_response, error_response, sync_offering_status_by_window
 from app.auth import role_required
 from app.db import get_db_cursor
 import pymysql
@@ -525,7 +525,9 @@ def delete_classroom(classroom_id):
 @role_required('admin')
 def get_offerings():
     """获取开课管理列表"""
-    with get_db_cursor(commit=False) as cursor:
+    with get_db_cursor(commit=True) as cursor:
+        # 惰性同步：选课窗口已结束的「开放选课」自动关闭
+        sync_offering_status_by_window(cursor)
         sql = """
         SELECT
             co.offering_id, c.course_name, t.real_name as teacher_name,
@@ -638,25 +640,155 @@ def delete_department(department_id):
 @admin_bp.route('/majors', methods=['GET'])
 @role_required('admin')
 def get_majors():
-    """获取专业列表（含所属院系，便于级联筛选）"""
+    """获取专业列表（含所属院系与班级/学生数量，便于级联筛选与管理）"""
     with get_db_cursor(commit=False) as cursor:
         cursor.execute("""
-            SELECT major_id, major_name, department_id
-            FROM Majors ORDER BY major_id
+            SELECT m.major_id, m.major_name, m.department_id,
+                   (SELECT COUNT(*) FROM Classes  c WHERE c.major_id = m.major_id) AS class_count,
+                   (SELECT COUNT(*) FROM Students s WHERE s.major_id = m.major_id) AS student_count
+            FROM Majors m ORDER BY m.major_id
         """)
         return success_response(cursor.fetchall())
+
+
+@admin_bp.route('/majors', methods=['POST'])
+@role_required('admin')
+def create_or_update_major():
+    """新增或编辑专业"""
+    data = request.get_json() or {}
+    major_id = data.get('major_id')
+    major_name = (data.get('major_name') or '').strip()
+    department_id = data.get('department_id')
+
+    if not major_name:
+        return error_response(400, "请填写专业名称")
+    if not department_id:
+        return error_response(400, "请选择所属学院")
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "SELECT department_id FROM Departments WHERE department_id=%s", (department_id,),
+        )
+        if not cursor.fetchone():
+            return error_response(400, "所属学院不存在")
+
+        # 同一学院下专业名查重（排除自身）
+        cursor.execute(
+            "SELECT major_id FROM Majors "
+            "WHERE major_name=%s AND department_id=%s AND major_id<>%s",
+            (major_name, department_id, major_id or 0),
+        )
+        if cursor.fetchone():
+            return error_response(400, f"该学院下已存在专业 {major_name}")
+
+        if major_id:
+            cursor.execute(
+                "UPDATE Majors SET major_name=%s, department_id=%s WHERE major_id=%s",
+                (major_name, department_id, major_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO Majors (major_name, department_id) VALUES (%s, %s)",
+                (major_name, department_id),
+            )
+        return success_response(message="操作成功")
+
+
+@admin_bp.route('/majors/<int:major_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_major(major_id):
+    """删除专业——仍有班级/学生时禁止删除"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT COUNT(*) AS c FROM Classes  WHERE major_id=%s", (major_id,))
+        class_count = cursor.fetchone()['c']
+        cursor.execute("SELECT COUNT(*) AS c FROM Students WHERE major_id=%s", (major_id,))
+        student_count = cursor.fetchone()['c']
+
+        if class_count or student_count:
+            return error_response(
+                400,
+                f"该专业下仍有 {class_count} 个班级、{student_count} 名学生，无法删除",
+            )
+
+        cursor.execute("DELETE FROM Majors WHERE major_id=%s", (major_id,))
+        return success_response(message="删除成功")
 
 
 @admin_bp.route('/classes', methods=['GET'])
 @role_required('admin')
 def get_classes():
-    """获取班级列表（含所属专业，便于级联筛选）"""
+    """获取班级列表（含所属专业/学院与学生数量，便于级联筛选与管理）"""
     with get_db_cursor(commit=False) as cursor:
         cursor.execute("""
-            SELECT class_id, class_name, major_id, grade_year
-            FROM Classes ORDER BY class_id
+            SELECT c.class_id, c.class_name, c.major_id, c.grade_year,
+                   m.major_name, m.department_id, d.department_name,
+                   (SELECT COUNT(*) FROM Students s WHERE s.class_id = c.class_id) AS student_count
+            FROM Classes c
+            LEFT JOIN Majors m ON c.major_id = m.major_id
+            LEFT JOIN Departments d ON m.department_id = d.department_id
+            ORDER BY c.class_id
         """)
         return success_response(cursor.fetchall())
+
+
+@admin_bp.route('/classes', methods=['POST'])
+@role_required('admin')
+def create_or_update_class():
+    """新增或编辑班级"""
+    data = request.get_json() or {}
+    class_id = data.get('class_id')
+    class_name = (data.get('class_name') or '').strip()
+    major_id = data.get('major_id')
+    grade_year = data.get('grade_year')
+
+    if not class_name:
+        return error_response(400, "请填写班级名称")
+    if not major_id:
+        return error_response(400, "请选择所属专业")
+    try:
+        grade_year = int(grade_year) if grade_year not in (None, '') else None
+    except (TypeError, ValueError):
+        return error_response(400, "年级必须为整数")
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT major_id FROM Majors WHERE major_id=%s", (major_id,))
+        if not cursor.fetchone():
+            return error_response(400, "所属专业不存在")
+
+        # 同一专业下班级名查重（排除自身）
+        cursor.execute(
+            "SELECT class_id FROM Classes "
+            "WHERE class_name=%s AND major_id=%s AND class_id<>%s",
+            (class_name, major_id, class_id or 0),
+        )
+        if cursor.fetchone():
+            return error_response(400, f"该专业下已存在班级 {class_name}")
+
+        if class_id:
+            cursor.execute(
+                "UPDATE Classes SET class_name=%s, major_id=%s, grade_year=%s WHERE class_id=%s",
+                (class_name, major_id, grade_year, class_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO Classes (class_name, major_id, grade_year) VALUES (%s, %s, %s)",
+                (class_name, major_id, grade_year),
+            )
+        return success_response(message="操作成功")
+
+
+@admin_bp.route('/classes/<int:class_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_class(class_id):
+    """删除班级——仍有学生时禁止删除"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT COUNT(*) AS c FROM Students WHERE class_id=%s", (class_id,))
+        student_count = cursor.fetchone()['c']
+        if student_count:
+            return error_response(400, f"该班级下仍有 {student_count} 名学生，无法删除")
+
+        cursor.execute("DELETE FROM Classes WHERE class_id=%s", (class_id,))
+        return success_response(message="删除成功")
 
 
 @admin_bp.route('/teachers', methods=['GET'])
@@ -1049,13 +1181,19 @@ def publish_grade():
             except:
                 pass  # 存储过程可能不存在，忽略
 
+            # 成绩发布即课程教学完成，自动结课（已取消的班不复活）
+            cursor.execute("""
+                UPDATE CourseOfferings SET status='已结课'
+                WHERE offering_id=%s AND status <> '已取消'
+            """, (offering_id,))
+
             # 写入审计日志
             cursor.execute("""
                 INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
-                VALUES ('admin', '发布成绩', '开课班', %s, '管理员发布成绩')
+                VALUES ('admin', '发布成绩', '开课班', %s, '管理员发布成绩，课程自动结课')
             """, (offering_id,))
 
-            return success_response(message="成绩发布成功")
+            return success_response(message="成绩发布成功，课程已结课")
         except Exception as e:
             return error_response(500, f"发布失败: {str(e)}")
 

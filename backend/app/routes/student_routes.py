@@ -5,7 +5,7 @@
 """
 from flask import request
 from app.routes import student_bp
-from app.utils import success_response, error_response
+from app.utils import success_response, error_response, sync_offering_status_by_window
 from app.auth import role_required
 from app.db import get_db_cursor
 import pymysql
@@ -44,7 +44,10 @@ def get_courses():
     """获取可选课程列表"""
     user = request.current_user
 
-    with get_db_cursor(commit=False) as cursor:
+    with get_db_cursor(commit=True) as cursor:
+        # 惰性同步：选课窗口已结束的「开放选课」自动关闭，避免列出已截止课程
+        sync_offering_status_by_window(cursor)
+
         # 获取学生ID
         cursor.execute("SELECT student_id FROM Students WHERE user_id = %s", (user['user_id'],))
         student = cursor.fetchone()
@@ -166,6 +169,9 @@ def enroll_course():
         student = cursor.fetchone()
         if not student:
             return error_response(404, "学生信息不存在")
+
+        # 惰性同步：选课窗口已结束的课先收口为关闭，存储过程再据 status 拦截
+        sync_offering_status_by_window(cursor)
 
         try:
             # 调用存储过程

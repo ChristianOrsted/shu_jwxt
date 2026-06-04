@@ -164,8 +164,20 @@ export const adminApi = {
     majors() {
         return USE_MOCK ? mock([]) : http.get('/admin/majors')
     },
+    saveMajor(payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.post('/admin/majors', payload)
+    },
+    deleteMajor(majorId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/majors/${majorId}`)
+    },
     classes() {
         return USE_MOCK ? mock([]) : http.get('/admin/classes')
+    },
+    saveClass(payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.post('/admin/classes', payload)
+    },
+    deleteClass(classId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/classes/${classId}`)
     },
     offerings() {
         return USE_MOCK ? mock(M.adminOfferings) : http.get('/admin/offerings')
