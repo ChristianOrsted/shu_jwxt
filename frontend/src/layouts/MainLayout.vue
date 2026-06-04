@@ -35,6 +35,7 @@ const menus = {
     admin: [
         { index: '/admin/dashboard', title: '总览', icon: 'Odometer' },
         { index: '/admin/users', title: '用户管理', icon: 'User' },
+        { index: '/admin/departments', title: '学院管理', icon: 'OfficeBuilding' },
         { index: '/admin/terms', title: '学年学期', icon: 'Calendar' },
         { index: '/admin/courses', title: '课程库', icon: 'Collection' },
         { index: '/admin/classrooms', title: '教室资源', icon: 'School' },

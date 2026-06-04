@@ -34,7 +34,7 @@ CREATE TABLE Users (
 DROP TABLE IF EXISTS Departments;
 CREATE TABLE Departments (
     department_id INT AUTO_INCREMENT PRIMARY KEY COMMENT '院系ID',
-    department_name VARCHAR(100) NOT NULL COMMENT '院系名称',
+    department_name VARCHAR(100) NOT NULL UNIQUE COMMENT '院系名称',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB COMMENT='院系表';
 

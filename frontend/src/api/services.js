@@ -143,6 +143,12 @@ export const adminApi = {
     departments() {
         return USE_MOCK ? mock([]) : http.get('/admin/departments')
     },
+    saveDepartment(payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.post('/admin/departments', payload)
+    },
+    deleteDepartment(departmentId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/departments/${departmentId}`)
+    },
     majors() {
         return USE_MOCK ? mock([]) : http.get('/admin/majors')
     },

@@ -5,7 +5,9 @@
 用于初始化数据库并生成真实的密码哈希
 """
 
+import re
 import pymysql
+from pymysql.cursors import DictCursor
 from werkzeug.security import generate_password_hash
 
 # 数据库配置
@@ -14,8 +16,43 @@ DB_CONFIG = {
     'port': 3306,
     'user': 'christian',
     'password': '123456',
-    'charset': 'utf8mb4'
+    'charset': 'utf8mb4',
+    'cursorclass': DictCursor,
 }
+
+def execute_sql_with_delimiter(cursor, sql_content):
+    """执行含有 DELIMITER 指令的 SQL 文件（PyMySQL 不支持 DELIMITER，需手动解析）"""
+    delimiter = ';'
+    remaining = sql_content
+
+    while remaining:
+        remaining = remaining.lstrip()
+        if not remaining:
+            break
+
+        # 识别并跳过 DELIMITER 指令
+        m = re.match(r'DELIMITER\s+(\S+)\s*(?:\n|$)', remaining, re.IGNORECASE)
+        if m:
+            delimiter = m.group(1)
+            remaining = remaining[m.end():]
+            continue
+
+        idx = remaining.find(delimiter)
+        if idx == -1:
+            stmt = remaining.strip()
+            remaining = ''
+        else:
+            stmt = remaining[:idx].strip()
+            remaining = remaining[idx + len(delimiter):]
+
+        if not stmt:
+            continue
+        # 去掉注释后若为空则跳过
+        if not re.sub(r'--[^\n]*', '', stmt).strip():
+            continue
+
+        cursor.execute(stmt)
+
 
 def init_database():
     """初始化数据库"""
@@ -56,8 +93,7 @@ def init_database():
         with open('sql/02_routines.sql', 'r', encoding='utf-8') as f:
             routines_sql = f.read()
 
-        # 执行整个脚本（包含 DELIMITER）
-        cursor.execute(routines_sql)
+        execute_sql_with_delimiter(cursor, routines_sql)
         connection.commit()
         print("   ✓ 存储过程和触发器创建完成")
 
@@ -72,13 +108,14 @@ def init_database():
             password_hash
         )
 
-        # 分割并执行
+        # 分割并执行（去掉注释后判断是否有实际 SQL，避免跳过注释开头的语句块）
         for statement in seed_sql.split(';'):
-            if statement.strip() and not statement.strip().startswith('--'):
+            no_comments = re.sub(r'--[^\n]*', '', statement).strip()
+            if no_comments:
                 try:
                     cursor.execute(statement)
                 except Exception as e:
-                    if 'SELECT' not in statement.upper():  # 忽略 SELECT 语句的错误
+                    if 'SELECT' not in statement.upper():
                         print(f"   警告: {str(e)[:100]}")
 
         connection.commit()

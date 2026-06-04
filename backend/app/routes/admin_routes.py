@@ -425,10 +425,72 @@ def get_offerings():
 @admin_bp.route('/departments', methods=['GET'])
 @role_required('admin')
 def get_departments():
-    """获取院系列表"""
+    """获取学院（院系）列表，附带专业/教师/学生数量便于管理"""
     with get_db_cursor(commit=False) as cursor:
-        cursor.execute("SELECT department_id, department_name FROM Departments ORDER BY department_id")
+        cursor.execute("""
+            SELECT d.department_id, d.department_name, d.created_at,
+                   (SELECT COUNT(*) FROM Majors   m WHERE m.department_id = d.department_id) AS major_count,
+                   (SELECT COUNT(*) FROM Teachers  t WHERE t.department_id = d.department_id) AS teacher_count,
+                   (SELECT COUNT(*) FROM Students  s WHERE s.department_id = d.department_id) AS student_count
+            FROM Departments d
+            ORDER BY d.department_id
+        """)
         return success_response(cursor.fetchall())
+
+
+@admin_bp.route('/departments', methods=['POST'])
+@role_required('admin')
+def create_or_update_department():
+    """新增或编辑学院（院系）"""
+    data = request.get_json()
+    department_id = data.get('department_id')
+    department_name = (data.get('department_name') or '').strip()
+
+    if not department_name:
+        return error_response(400, "请填写学院名称")
+
+    with get_db_cursor(commit=True) as cursor:
+        # 同名查重（排除自身），避免出现重复学院
+        cursor.execute(
+            "SELECT department_id FROM Departments WHERE department_name=%s AND department_id<>%s",
+            (department_name, department_id or 0),
+        )
+        if cursor.fetchone():
+            return error_response(400, f"学院 {department_name} 已存在")
+
+        if department_id:
+            cursor.execute(
+                "UPDATE Departments SET department_name=%s WHERE department_id=%s",
+                (department_name, department_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO Departments (department_name) VALUES (%s)",
+                (department_name,),
+            )
+        return success_response(message="操作成功")
+
+
+@admin_bp.route('/departments/<int:department_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_department(department_id):
+    """删除学院（院系）——存在关联的专业/教师/学生时禁止删除"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("SELECT COUNT(*) AS c FROM Majors   WHERE department_id=%s", (department_id,))
+        major_count = cursor.fetchone()['c']
+        cursor.execute("SELECT COUNT(*) AS c FROM Teachers WHERE department_id=%s", (department_id,))
+        teacher_count = cursor.fetchone()['c']
+        cursor.execute("SELECT COUNT(*) AS c FROM Students WHERE department_id=%s", (department_id,))
+        student_count = cursor.fetchone()['c']
+
+        if major_count or teacher_count or student_count:
+            return error_response(
+                400,
+                f"该学院下仍有 {major_count} 个专业、{teacher_count} 名教师、{student_count} 名学生，无法删除",
+            )
+
+        cursor.execute("DELETE FROM Departments WHERE department_id=%s", (department_id,))
+        return success_response(message="删除成功")
 
 
 @admin_bp.route('/majors', methods=['GET'])

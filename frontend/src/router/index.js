@@ -44,6 +44,7 @@ const routes = [
         children: [
             { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/views/admin/Dashboard.vue'), meta: { title: '总览' } },
             { path: 'users', name: 'admin-users', component: () => import('@/views/admin/UserManage.vue'), meta: { title: '用户管理' } },
+            { path: 'departments', name: 'admin-departments', component: () => import('@/views/admin/DepartmentManage.vue'), meta: { title: '学院管理' } },
             { path: 'terms', name: 'admin-terms', component: () => import('@/views/admin/TermManage.vue'), meta: { title: '学年学期' } },
             { path: 'courses', name: 'admin-courses', component: () => import('@/views/admin/CourseManage.vue'), meta: { title: '课程库' } },
             { path: 'classrooms', name: 'admin-classrooms', component: () => import('@/views/admin/ClassroomManage.vue'), meta: { title: '教室资源' } },
