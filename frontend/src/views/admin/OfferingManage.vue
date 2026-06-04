@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi } from '@/api/services'
 
 const loading = ref(false)
@@ -113,6 +113,40 @@ async function cancelOffering(row) {
     }
 }
 
+async function restoreOffering(row) {
+    try {
+        const res = await adminApi.restoreOffering(row.offering_id)
+        row.status = res.status
+        ElMessage.success('开课班已恢复为关闭选课状态，可再开放选课')
+    } catch (e) {
+        await load()
+    }
+}
+
+async function deleteOffering(row) {
+    const extra = row.selected_count > 0
+        ? `该班已有 ${row.selected_count} 人选课，删除后选课记录将一并清除。`
+        : ''
+    try {
+        await ElMessageBox.confirm(
+            `确定删除教学班「${row.teaching_class_name}」吗？${extra}此操作不可恢复。`,
+            '删除开课班',
+            { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+        )
+    } catch {
+        return
+    }
+    try {
+        await adminApi.deleteOffering(row.offering_id)
+        ElMessage.success('开课班已删除')
+        await load()
+    } catch (e) {
+        await load()
+    }
+}
+
+const phaseTagType = { 选课已截止: 'warning', 已结课: 'info' }
+
 function openEdit(row) {
     Object.assign(editForm, {
         offering_id: row.offering_id,
@@ -184,29 +218,39 @@ onMounted(load)
             <el-table-column label="状态" width="100" align="center">
                 <template #default="{ row }"><el-tag :type="statusType[row.status]">{{ row.status }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="操作" width="260" align="center" fixed="right">
+            <el-table-column label="操作" width="320" align="center" fixed="right">
                 <template #default="{ row }">
-                    <template v-if="row.status !== '已取消'">
-                        <el-button
-                            v-if="row.status === '开放选课' || row.status === '关闭选课'"
-                            size="small"
-                            @click="openEdit(row)"
-                        >
-                            编辑
+                    <template v-if="row.can_operate">
+                        <template v-if="row.status !== '已取消'">
+                            <el-button
+                                v-if="row.status === '开放选课' || row.status === '关闭选课'"
+                                size="small"
+                                @click="openEdit(row)"
+                            >
+                                编辑
+                            </el-button>
+                            <el-button size="small" @click="toggleSelect(row)">
+                                {{ row.status === '开放选课' ? '关闭选课' : '开放选课' }}
+                            </el-button>
+                            <el-button
+                                size="small"
+                                type="danger"
+                                :disabled="row.selected_count >= row.min_enrollment"
+                                @click="cancelOffering(row)"
+                            >
+                                取消
+                            </el-button>
+                        </template>
+                        <el-button v-else size="small" type="success" @click="restoreOffering(row)">
+                            恢复开课
                         </el-button>
-                        <el-button size="small" @click="toggleSelect(row)">
-                            {{ row.status === '开放选课' ? '关闭选课' : '开放选课' }}
-                        </el-button>
-                        <el-button
-                            size="small"
-                            type="danger"
-                            :disabled="row.selected_count >= row.min_enrollment"
-                            @click="cancelOffering(row)"
-                        >
-                            取消
+                        <el-button size="small" type="danger" plain @click="deleteOffering(row)">
+                            删除
                         </el-button>
                     </template>
-                    <span v-else>—</span>
+                    <el-tag v-else :type="phaseTagType[row.term_phase]" effect="plain" size="small">
+                        {{ row.term_phase }}·不可操作
+                    </el-tag>
                 </template>
             </el-table-column>
         </el-table>
@@ -214,7 +258,7 @@ onMounted(load)
             type="info"
             :closable="false"
             style="margin-top: 12px"
-            title="提示：只有当前选课人数低于最低开课人数的课程才允许取消（取消按钮可用）。"
+            title="提示：只有当前选课人数低于最低开课人数的课程才允许取消；开课班的操作（编辑/开放关闭/取消/删除）在该学期「选课」窗口截止前可用，选课截止或已结课后操作栏锁定。"
         />
 
         <el-dialog v-model="dialogVisible" title="新增开课班" width="720px">

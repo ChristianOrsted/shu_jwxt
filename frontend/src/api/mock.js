@@ -391,10 +391,10 @@ export const adminClassrooms = [
 ]
 
 export const adminOfferings = [
-    { offering_id: 101, course_name: '数据库原理', teacher_name: '李教授', term_name: '2025-2026学年第二学期', teaching_class_name: '数据库原理-01班', capacity: 40, selected_count: 38, min_enrollment: 10, is_retake_class: false, status: '开放选课' },
-    { offering_id: 102, course_name: '操作系统', teacher_name: '王老师', term_name: '2025-2026学年第二学期', teaching_class_name: '操作系统-01班', capacity: 40, selected_count: 40, min_enrollment: 10, is_retake_class: false, status: '开放选课' },
-    { offering_id: 103, course_name: '计算机网络', teacher_name: '赵老师', term_name: '2025-2026学年第二学期', teaching_class_name: '计算机网络-01班', capacity: 45, selected_count: 20, min_enrollment: 25, is_retake_class: false, status: '开放选课' },
-    { offering_id: 105, course_name: '高等数学（下）', teacher_name: '孙老师', term_name: '2025-2026学年第二学期', teaching_class_name: '高数下-重修班', capacity: 50, selected_count: 12, min_enrollment: 5, is_retake_class: true, status: '开放选课' },
+    { offering_id: 101, course_name: '数据库原理', teacher_name: '李教授', term_name: '2025-2026学年第二学期', teaching_class_name: '数据库原理-01班', capacity: 40, selected_count: 38, min_enrollment: 10, is_retake_class: false, status: '开放选课', term_phase: '可操作', can_operate: 1 },
+    { offering_id: 102, course_name: '操作系统', teacher_name: '王老师', term_name: '2025-2026学年第二学期', teaching_class_name: '操作系统-01班', capacity: 40, selected_count: 40, min_enrollment: 10, is_retake_class: false, status: '开放选课', term_phase: '选课已截止', can_operate: 0 },
+    { offering_id: 103, course_name: '计算机网络', teacher_name: '赵老师', term_name: '2025-2026学年第二学期', teaching_class_name: '计算机网络-01班', capacity: 45, selected_count: 20, min_enrollment: 25, is_retake_class: false, status: '开放选课', term_phase: '可操作', can_operate: 1 },
+    { offering_id: 105, course_name: '高等数学（下）', teacher_name: '孙老师', term_name: '2024-2025学年第二学期', teaching_class_name: '高数下-重修班', capacity: 50, selected_count: 12, min_enrollment: 5, is_retake_class: true, status: '已结课', term_phase: '已结课', can_operate: 0 },
 ]
 
 export const adminApprovals = [

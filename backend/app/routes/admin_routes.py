@@ -3,6 +3,7 @@
 """
 管理员端路由模块
 """
+from datetime import datetime
 from flask import request
 from app.routes import admin_bp
 from app.utils import success_response, error_response
@@ -403,6 +404,14 @@ def get_offerings():
             term.term_name, co.teaching_class_name,
             co.capacity, co.selected_count_cached as selected_count,
             co.min_enrollment, co.is_retake_class, co.status,
+            ew.enroll_end,
+            CASE
+                WHEN co.status = '已结课' THEN '已结课'
+                WHEN ew.enroll_end IS NOT NULL AND NOW() > ew.enroll_end THEN '选课已截止'
+                ELSE '可操作'
+            END AS term_phase,
+            (co.status <> '已结课'
+             AND (ew.enroll_end IS NULL OR NOW() <= ew.enroll_end)) AS can_operate,
             GROUP_CONCAT(
                 CONCAT('周', cs.weekday, ' ', cs.start_section, '-', cs.end_section,
                        '节[', cs.week_start, '-', cs.week_end, '周]')
@@ -412,8 +421,13 @@ def get_offerings():
         JOIN Courses c ON co.course_id = c.course_id
         JOIN Teachers t ON co.teacher_id = t.teacher_id
         JOIN Terms term ON co.term_id = term.term_id
+        LEFT JOIN (
+            SELECT term_id, MAX(end_time) AS enroll_end
+            FROM BusinessWindows WHERE window_type = '选课'
+            GROUP BY term_id
+        ) ew ON ew.term_id = co.term_id
         LEFT JOIN ClassSchedules cs ON co.offering_id = cs.offering_id
-        GROUP BY co.offering_id
+        GROUP BY co.offering_id, ew.enroll_end
         ORDER BY term.term_id DESC, co.offering_id
         """
         cursor.execute(sql)
@@ -676,6 +690,74 @@ def cancel_offering(offering_id):
               f"管理员取消教学班 {row['teaching_class_name']}（选课{row['selected_count_cached']}人 < 最低{row['min_enrollment']}人）"))
 
         return success_response(message="课程已取消")
+
+
+@admin_bp.route('/offerings/<int:offering_id>/restore', methods=['POST'])
+@role_required('admin')
+def restore_offering(offering_id):
+    """恢复已取消的开课班（恢复到「关闭选课」，由管理员确认后再手动开放）"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("""
+            SELECT status, teaching_class_name
+            FROM CourseOfferings WHERE offering_id=%s
+        """, (offering_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "开课班不存在")
+        if row['status'] != '已取消':
+            return error_response(400, f"当前状态为「{row['status']}」，无需恢复")
+
+        cursor.execute(
+            "UPDATE CourseOfferings SET status='关闭选课' WHERE offering_id=%s",
+            (offering_id,),
+        )
+
+        # 写入审计日志
+        cursor.execute("""
+            INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
+            VALUES ('admin', '恢复开课', '开课班', %s, %s)
+        """, (offering_id,
+              f"管理员恢复教学班 {row['teaching_class_name']}（恢复为关闭选课）"))
+
+        return success_response(
+            {'status': '关闭选课'},
+            message="开课班已恢复为关闭选课状态",
+        )
+
+
+@admin_bp.route('/offerings/<int:offering_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_offering(offering_id):
+    """删除开课班（仅限选课窗口未截止的开课班；级联清除排课与选课记录）"""
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("""
+            SELECT co.status, co.teaching_class_name,
+                   (SELECT MAX(bw.end_time) FROM BusinessWindows bw
+                    WHERE bw.term_id = co.term_id AND bw.window_type = '选课') AS enroll_end
+            FROM CourseOfferings co
+            WHERE co.offering_id=%s
+        """, (offering_id,))
+        row = cursor.fetchone()
+        if not row:
+            return error_response(404, "开课班不存在")
+
+        # 服务端再次判定选课窗口，防止绕过前端限制
+        if row['status'] == '已结课':
+            return error_response(400, "课程已结课，不能删除")
+        if row['enroll_end'] is not None and datetime.now() > row['enroll_end']:
+            return error_response(400, "选课已截止，该开课班不能删除")
+
+        # ClassSchedules / Enrollments / Grades 均为 ON DELETE CASCADE，随之自动清除
+        cursor.execute("DELETE FROM CourseOfferings WHERE offering_id=%s", (offering_id,))
+
+        # 写入审计日志
+        cursor.execute("""
+            INSERT INTO AuditLogs (operator, operation_type, target_type, target_id, reason)
+            VALUES ('admin', '删除开课', '开课班', %s, %s)
+        """, (offering_id,
+              f"管理员删除教学班 {row['teaching_class_name']}（选课未截止）"))
+
+        return success_response(message="开课班已删除")
 
 
 @admin_bp.route('/offerings/<int:offering_id>', methods=['PUT'])

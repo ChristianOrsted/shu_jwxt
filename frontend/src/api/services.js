@@ -167,8 +167,14 @@ export const adminApi = {
     cancelOffering(offeringId) {
         return USE_MOCK ? mock({ ok: true }) : http.post(`/admin/offerings/${offeringId}/cancel`)
     },
+    restoreOffering(offeringId) {
+        return USE_MOCK ? mock({ ok: true }) : http.post(`/admin/offerings/${offeringId}/restore`)
+    },
     updateOffering(offeringId, payload) {
         return USE_MOCK ? mock({ ok: true }) : http.put(`/admin/offerings/${offeringId}`, payload)
+    },
+    deleteOffering(offeringId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/offerings/${offeringId}`)
     },
     approvals() {
         return USE_MOCK ? mock(M.adminApprovals) : http.get('/admin/approvals')
