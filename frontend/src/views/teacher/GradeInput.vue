@@ -60,6 +60,10 @@ async function submitAll() {
             '提交成绩',
             { confirmButtonText: '确认提交', cancelButtonText: '取消', type: 'warning' },
         )
+        // 先落库再提交：分数只存在内存中，必须先保存草稿，
+        // 否则后端 sp_TeacherSubmitGrade 在空成绩表上 UPDATE 不到任何行，
+        // 导致教师看到「已提交」但管理员发布列表查不到。
+        await teacherApi.saveGrades(currentOffering.value, rows.value)
         await teacherApi.submitGrades(currentOffering.value)
         rows.value.forEach((r) => (r.score_status = '已提交'))
         ElMessage.success('成绩已提交，等待管理员发布')
