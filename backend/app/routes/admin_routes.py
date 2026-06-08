@@ -1155,6 +1155,33 @@ def get_grade_publish():
         return success_response(offerings)
 
 
+@admin_bp.route('/grade-detail/<int:offering_id>', methods=['GET'])
+@role_required('admin')
+def get_grade_detail(offering_id):
+    """获取某开课班的学生成绩明细（供成绩发布页下拉查看）"""
+    with get_db_cursor(commit=False) as cursor:
+        sql = """
+        SELECT
+            e.enrollment_id, s.student_no, s.real_name,
+            g.usual_score, g.experiment_score, g.final_score,
+            g.total_score, g.score_status
+        FROM Enrollments e
+        JOIN Students s ON e.student_id = s.student_id
+        LEFT JOIN Grades g ON e.enrollment_id = g.enrollment_id
+        WHERE e.offering_id = %s AND e.status = '已选'
+        ORDER BY s.student_no
+        """
+        cursor.execute(sql, (offering_id,))
+        grades = cursor.fetchall()
+
+        # 未录入成绩的统一显示为“未录入”
+        for grade in grades:
+            if not grade['score_status']:
+                grade['score_status'] = '未录入'
+
+        return success_response(grades)
+
+
 @admin_bp.route('/grade/publish', methods=['POST'])
 @role_required('admin')
 def publish_grade():

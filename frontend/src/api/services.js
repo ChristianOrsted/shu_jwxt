@@ -209,6 +209,9 @@ export const adminApi = {
     gradePublish() {
         return USE_MOCK ? mock(M.adminGradePublish) : http.get('/admin/grade-publish')
     },
+    gradeDetail(offeringId) {
+        return USE_MOCK ? mock(M.gradeSheets[offeringId] || []) : http.get(`/admin/grade-detail/${offeringId}`)
+    },
     publishGrade(offeringId) {
         return USE_MOCK ? mock({ ok: true }) : http.post('/admin/grade/publish', { offering_id: offeringId })
     },

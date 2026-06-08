@@ -304,6 +304,15 @@ export const gradeSheets = {
         { enrollment_id: 5201, student_no: 'S2024001', real_name: '刘洋', usual_score: null, experiment_score: null, final_score: null, total_score: null, score_status: '未录入' },
         { enrollment_id: 5202, student_no: 'S2024008', real_name: '赵敏', usual_score: null, experiment_score: null, final_score: null, total_score: null, score_status: '未录入' },
     ],
+    90: [
+        { enrollment_id: 5301, student_no: 'S2023003', real_name: '孙浩', usual_score: 88, experiment_score: 92, final_score: 85, total_score: 87, score_status: '已提交' },
+        { enrollment_id: 5302, student_no: 'S2023004', real_name: '周婷', usual_score: 76, experiment_score: 80, final_score: 70, total_score: 74, score_status: '已提交' },
+        { enrollment_id: 5303, student_no: 'S2023005', real_name: '吴磊', usual_score: 55, experiment_score: 60, final_score: 48, total_score: 52, score_status: '已提交' },
+    ],
+    95: [
+        { enrollment_id: 5401, student_no: 'S2023010', real_name: '郑爽', usual_score: 90, experiment_score: 85, final_score: 88, total_score: 88, score_status: '已提交' },
+        { enrollment_id: 5402, student_no: 'S2023011', real_name: '冯雪', usual_score: null, experiment_score: null, final_score: null, total_score: null, score_status: '未录入' },
+    ],
 }
 
 // 教师申请记录

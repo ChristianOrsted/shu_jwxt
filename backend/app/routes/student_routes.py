@@ -328,7 +328,7 @@ def get_grades():
         JOIN Enrollments e ON g.enrollment_id = e.enrollment_id
         JOIN CourseOfferings co ON e.offering_id = co.offering_id
         JOIN Courses c ON co.course_id = c.course_id
-        JOIN Teachers teach ON co.teacher_id = teach.teacher_id
+        JOIN Teachers t ON co.teacher_id = t.teacher_id
         JOIN Terms term ON co.term_id = term.term_id
         WHERE e.student_id = %s AND g.score_status = '已发布'
         ORDER BY term.term_id DESC, c.course_name

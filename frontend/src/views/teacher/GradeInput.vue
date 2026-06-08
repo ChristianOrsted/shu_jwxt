@@ -43,7 +43,7 @@ const locked = (row) => ['已提交', '已发布', '已冻结'].includes(row.sco
 async function saveDraft() {
     await teacherApi.saveGrades(currentOffering.value, rows.value)
     rows.value.forEach((r) => {
-        if (!locked(r) && r.total_score != null) r.score_status = '已录入'
+        if (!locked(r) && r.total_score != null) r.score_status = '草稿'
     })
     ElMessage.success('成绩已保存为草稿')
 }

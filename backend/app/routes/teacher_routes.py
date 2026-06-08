@@ -259,12 +259,24 @@ def submit_grade():
             return error_response(403, "无权操作此课程")
 
         try:
-            # 调用存储过程
+            # 调用存储过程（仅把已存在且三项分数齐全的草稿成绩更新为「已提交」）
             cursor.callproc('sp_TeacherSubmitGrade', (offering_id,))
-            return success_response(message="成绩提交成功")
         except pymysql.Error as e:
             error_msg = str(e.args[1]) if len(e.args) > 1 else "成绩提交失败"
             return error_response(400, error_msg)
+
+        # 防御性校验：存储过程只 UPDATE 不 INSERT，若没有任何草稿成绩落库，
+        # 它会「静默」地一行都改不到却不报错。这里确认确实有成绩转为「已提交」，
+        # 否则明确告知教师先录入并保存，避免出现「提示成功但库里没数据」。
+        cursor.execute("""
+            SELECT COUNT(*) AS submitted FROM Grades g
+            JOIN Enrollments e ON g.enrollment_id = e.enrollment_id
+            WHERE e.offering_id = %s AND g.score_status = '已提交'
+        """, (offering_id,))
+        if cursor.fetchone()['submitted'] == 0:
+            return error_response(400, "没有可提交的成绩，请先录入并保存学生成绩后再提交")
+
+        return success_response(message="成绩提交成功")
 
 
 @teacher_bp.route('/requests', methods=['GET'])
