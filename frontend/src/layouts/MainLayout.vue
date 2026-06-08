@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { auth, clearAuth, currentRole } from '@/store/auth'
+import { isDark, toggleTheme } from '@/store/theme'
 
 const route = useRoute()
 const router = useRouter()
@@ -101,18 +102,25 @@ async function logout() {
                     <el-divider direction="vertical" />
                     <span class="title">{{ pageTitle }}</span>
                 </div>
-                <el-dropdown @command="(c) => c === 'logout' && logout()">
-                    <span class="user">
-                        <el-icon><Avatar /></el-icon>
-                        {{ auth.user?.real_name || auth.user?.username }}
-                        <el-icon><ArrowDown /></el-icon>
-                    </span>
-                    <template #dropdown>
-                        <el-dropdown-menu>
-                            <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-                        </el-dropdown-menu>
-                    </template>
-                </el-dropdown>
+                <div class="header-actions">
+                    <el-tooltip :content="isDark ? '切换到白天模式' : '切换到黑夜模式'" placement="bottom">
+                        <el-button class="theme-btn" text circle @click="toggleTheme">
+                            <el-icon :size="18"><component :is="isDark ? 'Sunny' : 'Moon'" /></el-icon>
+                        </el-button>
+                    </el-tooltip>
+                    <el-dropdown @command="(c) => c === 'logout' && logout()">
+                        <span class="user">
+                            <el-icon><Avatar /></el-icon>
+                            {{ auth.user?.real_name || auth.user?.username }}
+                            <el-icon><ArrowDown /></el-icon>
+                        </span>
+                        <template #dropdown>
+                            <el-dropdown-menu>
+                                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                            </el-dropdown-menu>
+                        </template>
+                    </el-dropdown>
+                </div>
             </el-header>
 
             <el-main class="main">
@@ -168,6 +176,14 @@ async function logout() {
     font-size: 16px;
     font-weight: 600;
 }
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.theme-btn {
+    color: var(--el-text-color-regular);
+}
 .user {
     display: flex;
     align-items: center;
@@ -178,5 +194,17 @@ async function logout() {
 .main {
     padding: 20px;
     background: #f5f7fa;
+}
+
+/* 黑夜模式：覆盖头部 / 内容区写死的浅色底 */
+html.dark .header {
+    background: var(--el-bg-color);
+    border-bottom-color: var(--el-border-color);
+}
+html.dark .user {
+    color: var(--el-text-color-primary);
+}
+html.dark .main {
+    background: var(--el-bg-color-page);
 }
 </style>

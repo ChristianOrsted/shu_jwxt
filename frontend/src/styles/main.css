@@ -18,6 +18,12 @@ body,
   background: #f5f7fa;
 }
 
+html.dark body,
+html.dark #app {
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color-page);
+}
+
 a {
   text-decoration: none;
   color: inherit;

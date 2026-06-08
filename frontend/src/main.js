@@ -2,11 +2,16 @@ import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
 import './styles/main.css'
+import { initTheme } from './store/theme'
+
+// 应用启动时恢复用户的白天/黑夜模式偏好
+initTheme()
 
 const app = createApp(App)
 
