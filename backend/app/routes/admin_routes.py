@@ -239,7 +239,7 @@ def get_terms():
     """获取学年学期列表"""
     with get_db_cursor(commit=False) as cursor:
         sql = """
-        SELECT ay.academic_year_name,
+        SELECT ay.academic_year_id, ay.academic_year_name,
                JSON_ARRAYAGG(
                    JSON_OBJECT(
                        'term_id', t.term_id,
@@ -279,6 +279,113 @@ def set_current_term(term_id):
         # 一条语句完成互斥：匹配的学期置 1，其余置 0
         cursor.execute("UPDATE Terms SET is_current = (term_id=%s)", (term_id,))
         return success_response(message=f"已将「{row['term_name']}」设为当前学期")
+
+
+def _parse_date(val, label):
+    """解析可选的 YYYY-MM-DD 日期；空值返回 None，格式错误抛 ValueError"""
+    val = (val or '').strip()
+    if not val:
+        return None
+    try:
+        return datetime.strptime(val, '%Y-%m-%d').date()
+    except ValueError:
+        raise ValueError(f"{label}日期格式不正确（应为 YYYY-MM-DD）")
+
+
+@admin_bp.route('/academic-years', methods=['POST'])
+@role_required('admin')
+def create_academic_year():
+    """新建学年，并自动创建其第一、第二两个学期（默认均非当前学期）"""
+    data = request.get_json() or {}
+    year_name = (data.get('academic_year_name') or '').strip()
+    if not year_name:
+        return error_response(400, "请填写学年名称")
+
+    # 两个学期的起止日期均为可选
+    try:
+        t1_start = _parse_date(data.get('term1_start'), '第一学期开始')
+        t1_end = _parse_date(data.get('term1_end'), '第一学期结束')
+        t2_start = _parse_date(data.get('term2_start'), '第二学期开始')
+        t2_end = _parse_date(data.get('term2_end'), '第二学期结束')
+    except ValueError as e:
+        return error_response(400, str(e))
+
+    if t1_start and t1_end and t1_start >= t1_end:
+        return error_response(400, "第一学期开始日期必须早于结束日期")
+    if t2_start and t2_end and t2_start >= t2_end:
+        return error_response(400, "第二学期开始日期必须早于结束日期")
+
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "SELECT academic_year_id FROM AcademicYears WHERE academic_year_name=%s",
+            (year_name,),
+        )
+        if cursor.fetchone():
+            return error_response(400, f"学年「{year_name}」已存在")
+
+        cursor.execute(
+            "INSERT INTO AcademicYears (academic_year_name) VALUES (%s)", (year_name,)
+        )
+        year_id = cursor.lastrowid
+
+        cursor.execute(
+            "INSERT INTO Terms (academic_year_id, term_no, term_name, start_date, end_date, is_current) "
+            "VALUES (%s, 1, %s, %s, %s, FALSE)",
+            (year_id, f"{year_name}第一学期", t1_start, t1_end),
+        )
+        cursor.execute(
+            "INSERT INTO Terms (academic_year_id, term_no, term_name, start_date, end_date, is_current) "
+            "VALUES (%s, 2, %s, %s, %s, FALSE)",
+            (year_id, f"{year_name}第二学期", t2_start, t2_end),
+        )
+        return success_response(message=f"学年「{year_name}」已创建（含第一、第二学期）")
+
+
+@admin_bp.route('/academic-years/<int:year_id>', methods=['DELETE'])
+@role_required('admin')
+def delete_academic_year(year_id):
+    """删除尚未开始、且无开课记录的学年（连同其空学期一并删除）。
+
+    满足以下任一情况视为「已开始/在用」，禁止删除，避免级联破坏真实数据：
+    - 含当前学期；
+    - 任一学期的开始日期已到；
+    - 该学年下已有开课记录。
+    """
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute(
+            "SELECT academic_year_name FROM AcademicYears WHERE academic_year_id=%s",
+            (year_id,),
+        )
+        year = cursor.fetchone()
+        if not year:
+            return error_response(404, "学年不存在")
+
+        cursor.execute(
+            "SELECT COUNT(*) AS n FROM Terms WHERE academic_year_id=%s AND is_current=TRUE",
+            (year_id,),
+        )
+        if cursor.fetchone()['n']:
+            return error_response(400, "该学年包含当前学期，不能删除")
+
+        cursor.execute(
+            "SELECT COUNT(*) AS n FROM Terms "
+            "WHERE academic_year_id=%s AND start_date IS NOT NULL AND start_date <= CURDATE()",
+            (year_id,),
+        )
+        if cursor.fetchone()['n']:
+            return error_response(400, "该学年已开始，不能删除")
+
+        cursor.execute(
+            "SELECT COUNT(*) AS n FROM CourseOfferings co "
+            "JOIN Terms t ON co.term_id = t.term_id WHERE t.academic_year_id=%s",
+            (year_id,),
+        )
+        if cursor.fetchone()['n']:
+            return error_response(400, "该学年已有开课记录，不能删除")
+
+        # 通过校验：删除学年，外键级联清除其空学期及业务时间窗口
+        cursor.execute("DELETE FROM AcademicYears WHERE academic_year_id=%s", (year_id,))
+        return success_response(message=f"学年「{year['academic_year_name']}」已删除")
 
 
 @admin_bp.route('/business-windows', methods=['GET'])

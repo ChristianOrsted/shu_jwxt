@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi } from '@/api/services'
 
 const loading = ref(false)
@@ -89,6 +89,67 @@ async function setCurrent(term) {
         await load()
     }
 }
+
+// 新建学年（自动创建第一、第二两个学期）
+const addVisible = ref(false)
+const addSaving = ref(false)
+const addForm = reactive({ academic_year_name: '', term1: null, term2: null })
+
+// 依据最新学年推算下一学年名，如 2025-2026学年 → 2026-2027学年
+function suggestYearName() {
+    const m = (years.value[0]?.academic_year_name || '').match(/^(\d{4})-(\d{4})/)
+    if (m) return `${+m[1] + 1}-${+m[2] + 1}学年`
+    const y = new Date().getFullYear()
+    return `${y}-${y + 1}学年`
+}
+
+function openAddYear() {
+    Object.assign(addForm, { academic_year_name: suggestYearName(), term1: null, term2: null })
+    addVisible.value = true
+}
+
+async function saveYear() {
+    if (!addForm.academic_year_name.trim()) {
+        ElMessage.warning('请填写学年名称')
+        return
+    }
+    addSaving.value = true
+    try {
+        await adminApi.createAcademicYear({
+            academic_year_name: addForm.academic_year_name.trim(),
+            term1_start: addForm.term1?.[0] || '',
+            term1_end: addForm.term1?.[1] || '',
+            term2_start: addForm.term2?.[0] || '',
+            term2_end: addForm.term2?.[1] || '',
+        })
+        ElMessage.success('学年已创建')
+        addVisible.value = false
+        await load()
+    } finally {
+        addSaving.value = false
+    }
+}
+
+// 删除学年（仅限未开始、无开课记录的学年；具体规则由后端校验）
+async function removeYear(y) {
+    try {
+        await ElMessageBox.confirm(
+            `确定删除学年「${y.academic_year_name}」吗？将一并删除其下的学期，此操作不可恢复。`,
+            '删除学年',
+            { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+        )
+    } catch {
+        return // 取消
+    }
+    try {
+        await adminApi.deleteAcademicYear(y.academic_year_id)
+        ElMessage.success('学年已删除')
+        await load()
+    } catch (e) {
+        // 后端拒绝（如已开始/有开课记录）时给出提示
+        await load()
+    }
+}
 onMounted(load)
 
 function formatTime(val) {
@@ -105,11 +166,18 @@ function formatTime(val) {
                 <h2>学年学期管理</h2>
                 <div class="subtitle">每个学年包含第一、第二两个学期，并设置当前学期</div>
             </div>
-            <el-button type="primary" :icon="'Plus'" @click="ElMessage.info('演示环境：新建学年功能占位')">新建学年</el-button>
+            <el-button type="primary" :icon="'Plus'" @click="openAddYear">新建学年</el-button>
         </div>
 
-        <el-card v-for="y in years" :key="y.academic_year_name" shadow="never" style="margin-bottom: 16px">
-            <template #header><strong>{{ y.academic_year_name }}</strong></template>
+        <el-card v-for="y in years" :key="y.academic_year_id" shadow="never" style="margin-bottom: 16px">
+            <template #header>
+                <div style="display: flex; align-items: center; justify-content: space-between">
+                    <strong>{{ y.academic_year_name }}</strong>
+                    <el-button size="small" type="danger" plain :icon="'Delete'" @click="removeYear(y)">
+                        删除学年
+                    </el-button>
+                </div>
+            </template>
             <el-table :data="y.terms" border>
                 <el-table-column prop="term_name" label="学期" min-width="180" />
                 <el-table-column prop="term_no" label="学期序号" width="100" align="center" />
@@ -182,6 +250,35 @@ function formatTime(val) {
             <template #footer>
                 <el-button @click="editVisible = false">取消</el-button>
                 <el-button type="primary" :loading="editSaving" @click="saveWindow">保存</el-button>
+            </template>
+        </el-dialog>
+
+        <el-dialog v-model="addVisible" title="新建学年" width="480px">
+            <el-form :model="addForm" label-width="100px">
+                <el-form-item label="学年名称" required>
+                    <el-input v-model="addForm.academic_year_name" placeholder="如：2026-2027学年" />
+                </el-form-item>
+                <el-form-item label="第一学期">
+                    <el-date-picker
+                        v-model="addForm.term1" type="daterange"
+                        value-format="YYYY-MM-DD" range-separator="至"
+                        start-placeholder="开始日期" end-placeholder="结束日期" style="width: 100%"
+                    />
+                </el-form-item>
+                <el-form-item label="第二学期">
+                    <el-date-picker
+                        v-model="addForm.term2" type="daterange"
+                        value-format="YYYY-MM-DD" range-separator="至"
+                        start-placeholder="开始日期" end-placeholder="结束日期" style="width: 100%"
+                    />
+                </el-form-item>
+                <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                    将自动创建该学年的第一、第二两个学期；日期可留空，之后再补。
+                </div>
+            </el-form>
+            <template #footer>
+                <el-button @click="addVisible = false">取消</el-button>
+                <el-button type="primary" :loading="addSaving" @click="saveYear">创建</el-button>
             </template>
         </el-dialog>
     </div>

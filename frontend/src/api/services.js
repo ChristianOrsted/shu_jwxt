@@ -129,6 +129,12 @@ export const adminApi = {
     setCurrentTerm(termId) {
         return USE_MOCK ? mock({ ok: true }) : http.put(`/admin/terms/${termId}/set-current`)
     },
+    createAcademicYear(payload) {
+        return USE_MOCK ? mock({ ok: true }) : http.post('/admin/academic-years', payload)
+    },
+    deleteAcademicYear(yearId) {
+        return USE_MOCK ? mock({ ok: true }) : http.delete(`/admin/academic-years/${yearId}`)
+    },
     businessWindows() {
         return USE_MOCK ? mock(M.businessWindows) : http.get('/admin/business-windows')
     },
