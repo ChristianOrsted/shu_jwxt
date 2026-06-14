@@ -12,7 +12,7 @@
 
 - **学生端**：选课中心、已选课程、个人课表、成绩查询、挂科重修
 - **教师端**：授课任务、学生名单、成绩录入、成绩统计、教学申请
-- **管理员端**：用户管理、开课管理、成绩发布、统计分析、申请审批
+- **管理员端**：用户管理、学年学期管理（新建 / 删除学年）、开课管理、成绩发布、统计分析、申请审批
 
 ## 核心特性
 
@@ -193,6 +193,9 @@ curl -X POST http://localhost:5000/api/auth/login \
 - `GET /api/teacher/offerings` — 授课任务
 - `POST /api/teacher/grade/submit` — 提交成绩
 - `GET /api/admin/statistics` — 统计数据
+- `GET /api/admin/terms` — 学年学期列表
+- `POST /api/admin/academic-years` — 新建学年（自动生成两个学期）
+- `DELETE /api/admin/academic-years/:id` — 删除学年（未开始且无开课记录时）
 
 统一响应格式：
 
