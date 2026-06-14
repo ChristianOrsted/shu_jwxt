@@ -7,9 +7,13 @@ import { term, loadCurrentTerm } from '@/store/term'
 const loading = ref(false)
 const list = ref([])
 
-const totalCredits = computed(() =>
-    list.value.filter((c) => c.status === '已选').reduce((s, c) => s + c.credits, 0),
-)
+const totalCredits = computed(() => {
+    // credits 经后端 JSON 序列化为字符串，需转数字再累加，否则会变成字符串拼接（如 "03.03.05"）
+    const sum = list.value
+        .filter((c) => c.status === '已选')
+        .reduce((s, c) => s + Number(c.credits || 0), 0)
+    return Math.round(sum * 10) / 10
+})
 
 async function load() {
     loading.value = true
