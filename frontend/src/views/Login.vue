@@ -1,9 +1,10 @@
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/services'
 import { setAuth, roleHome } from '@/store/auth'
+import { isDark } from '@/store/theme'
 import { demoAccounts } from '@/api/mock'
 
 const router = useRouter()
@@ -21,6 +22,16 @@ const rules = {
     username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
     password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
+
+// 登录页是「蓝底 + 白卡片」的亮色设计，不随应用的夜间模式走：
+// 进入时临时移除 <html> 的 dark 类，离开时按用户真实偏好还原
+// （不写 localStorage，登录后应用仍保持用户选择的主题）。
+onMounted(() => {
+    document.documentElement.classList.remove('dark')
+})
+onUnmounted(() => {
+    if (isDark.value) document.documentElement.classList.add('dark')
+})
 
 // 选择角色时自动填入对应演示账号，便于答辩演示
 function onRoleChange(role) {
