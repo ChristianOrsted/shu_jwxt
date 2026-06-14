@@ -102,25 +102,25 @@ onMounted(load)
 }
 .timetable th,
 .timetable td {
-    border: 1px solid #ebeef5;
+    border: 1px solid var(--el-border-color-lighter);
     text-align: center;
     height: 56px;
     vertical-align: middle;
     font-size: 13px;
 }
 .timetable th {
-    background: #fafafa;
+    background: var(--el-fill-color-lighter);
     padding: 8px 0;
 }
 .time-col {
     width: 90px;
-    background: #fafafa;
+    background: var(--el-fill-color-lighter);
 }
 .sec-no {
     font-weight: 600;
 }
 .sec-time {
-    color: #8a8f99;
+    color: var(--el-text-color-secondary);
     font-size: 11px;
 }
 .course-block {
