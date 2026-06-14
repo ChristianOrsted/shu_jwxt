@@ -48,6 +48,7 @@ onMounted(load)
                 <template #default="{ row }"><el-tag effect="plain">{{ row.request_type }}</el-tag></template>
             </el-table-column>
             <el-table-column prop="course_name" label="课程" min-width="130" />
+            <el-table-column prop="term_name" label="学期" min-width="160" />
             <el-table-column prop="content" label="申请内容" min-width="170" />
             <el-table-column prop="conflict_check_result" label="冲突检测" min-width="200">
                 <template #default="{ row }">

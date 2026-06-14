@@ -293,6 +293,8 @@ CREATE TABLE TeachingRequests (
     request_id INT AUTO_INCREMENT PRIMARY KEY COMMENT '申请ID',
     teacher_id INT NOT NULL COMMENT '教师ID',
     offering_id INT COMMENT '相关开课班ID',
+    term_id INT COMMENT '申请学期',
+    course_name VARCHAR(100) COMMENT '课程名称（教师自由填写，开课申请时无对应开课班）',
     request_type ENUM('开课申请', '扩容申请', '调课申请', '停课申请', '成绩修改申请') NOT NULL COMMENT '申请类型',
     content TEXT NOT NULL COMMENT '申请内容',
     reason TEXT COMMENT '申请理由',
@@ -302,6 +304,7 @@ CREATE TABLE TeachingRequests (
     processed_at DATETIME COMMENT '处理时间',
     FOREIGN KEY (teacher_id) REFERENCES Teachers(teacher_id) ON DELETE CASCADE,
     FOREIGN KEY (offering_id) REFERENCES CourseOfferings(offering_id) ON DELETE SET NULL,
+    FOREIGN KEY (term_id) REFERENCES Terms(term_id) ON DELETE SET NULL,
     INDEX idx_teacher (teacher_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB COMMENT='教学申请表';

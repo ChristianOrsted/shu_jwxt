@@ -1079,7 +1079,9 @@ def get_approvals():
         sql = """
         SELECT
             tr.request_id, t.real_name as teacher_name, tr.request_type,
-            c.course_name, term.term_name, tr.content,
+            COALESCE(tr.course_name, c.course_name) AS course_name,
+            COALESCE(rterm.term_name, term.term_name) AS term_name,
+            tr.content,
             tr.reason, tr.status, tr.created_at,
             '无冲突' as conflict_check_result
         FROM TeachingRequests tr
@@ -1087,6 +1089,7 @@ def get_approvals():
         LEFT JOIN CourseOfferings co ON tr.offering_id = co.offering_id
         LEFT JOIN Courses c ON co.course_id = c.course_id
         LEFT JOIN Terms term ON co.term_id = term.term_id
+        LEFT JOIN Terms rterm ON tr.term_id = rterm.term_id
         WHERE tr.status = '待审批'
         ORDER BY tr.created_at
         """

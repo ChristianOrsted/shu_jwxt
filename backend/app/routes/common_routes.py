@@ -29,3 +29,19 @@ def get_current_term():
             return error_response(404, "未找到当前学期")
 
         return success_response(term)
+
+
+@common_bp.route('/terms', methods=['GET'])
+@login_required
+def get_terms():
+    """获取全部学期列表（供下拉选择，按时间倒序）"""
+    with get_db_cursor(commit=False) as cursor:
+        sql = """
+        SELECT t.term_id, t.term_name, t.term_no, t.is_current,
+               ay.academic_year_name
+        FROM Terms t
+        JOIN AcademicYears ay ON t.academic_year_id = ay.academic_year_id
+        ORDER BY t.term_id DESC
+        """
+        cursor.execute(sql)
+        return success_response(cursor.fetchall())

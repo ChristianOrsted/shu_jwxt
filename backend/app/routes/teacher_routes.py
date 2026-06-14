@@ -294,13 +294,15 @@ def get_requests():
         sql = """
         SELECT
             tr.request_id, tr.request_type,
-            c.course_name, term.term_name,
+            COALESCE(tr.course_name, c.course_name) AS course_name,
+            COALESCE(rterm.term_name, term.term_name) AS term_name,
             tr.content, tr.reason, tr.status, tr.created_at,
             tr.admin_comment, tr.processed_at
         FROM TeachingRequests tr
         LEFT JOIN CourseOfferings co ON tr.offering_id = co.offering_id
         LEFT JOIN Courses c ON co.course_id = c.course_id
         LEFT JOIN Terms term ON co.term_id = term.term_id
+        LEFT JOIN Terms rterm ON tr.term_id = rterm.term_id
         WHERE tr.teacher_id = %s
         ORDER BY tr.created_at DESC
         """
@@ -318,12 +320,13 @@ def submit_request():
     data = request.get_json()
 
     request_type = data.get('request_type')
-    course_name = data.get('course_name')
+    course_name = (data.get('course_name') or '').strip()
+    term_id = data.get('term_id')
     content = data.get('content')
     reason = data.get('reason')
 
-    if not all([request_type, content, reason]):
-        return error_response(400, "参数不完整")
+    if not all([request_type, course_name, content]):
+        return error_response(400, "请填写申请类型、课程名称与申请内容")
 
     with get_db_cursor(commit=True) as cursor:
         cursor.execute("SELECT teacher_id FROM Teachers WHERE user_id = %s", (user['user_id'],))
@@ -332,10 +335,12 @@ def submit_request():
             return error_response(404, "教师信息不存在")
 
         sql = """
-        INSERT INTO TeachingRequests (teacher_id, request_type, content, reason, status)
-        VALUES (%s, %s, %s, %s, '待审批')
+        INSERT INTO TeachingRequests
+            (teacher_id, term_id, course_name, request_type, content, reason, status)
+        VALUES (%s, %s, %s, %s, %s, %s, '待审批')
         """
-        cursor.execute(sql, (teacher['teacher_id'], request_type, content, reason))
+        cursor.execute(sql, (teacher['teacher_id'], term_id, course_name,
+                             request_type, content, reason))
 
         return success_response(message="申请提交成功")
 

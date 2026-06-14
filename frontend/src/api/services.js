@@ -97,6 +97,10 @@ export const teacherApi = {
     requests() {
         return USE_MOCK ? mock(M.teacherRequests) : http.get('/teacher/requests')
     },
+    terms() {
+        if (USE_MOCK) return mock(M.adminTerms.flatMap((g) => g.terms || g))
+        return http.get('/common/terms')
+    },
     submitRequest(payload) {
         return USE_MOCK ? mock({ ok: true }) : http.post('/teacher/requests', payload)
     },

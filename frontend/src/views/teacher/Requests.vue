@@ -5,16 +5,23 @@ import { teacherApi } from '@/api/services'
 
 const loading = ref(false)
 const list = ref([])
+const terms = ref([])
 const dialogVisible = ref(false)
 
 const statusType = { 待审批: 'warning', 已通过: 'success', 已驳回: 'danger' }
 
 const form = reactive({
     request_type: '开课申请',
+    term_id: null,
     course_name: '',
     content: '',
     reason: '',
 })
+
+function defaultTermId() {
+    const current = terms.value.find((t) => t.is_current)
+    return (current || terms.value[0])?.term_id ?? null
+}
 
 async function load() {
     loading.value = true
@@ -25,8 +32,25 @@ async function load() {
     }
 }
 
-function openDialog() {
-    Object.assign(form, { request_type: '开课申请', course_name: '', content: '', reason: '' })
+async function loadTerms() {
+    if (terms.value.length) return
+    terms.value = await teacherApi.terms()
+}
+
+async function openDialog() {
+    // 按需加载学期，避免挂载时那次请求失败后下拉永远为空
+    try {
+        await loadTerms()
+    } catch {
+        ElMessage.error('学期列表加载失败，请刷新页面后重试')
+    }
+    Object.assign(form, {
+        request_type: '开课申请',
+        term_id: defaultTermId(),
+        course_name: '',
+        content: '',
+        reason: '',
+    })
     dialogVisible.value = true
 }
 
@@ -35,18 +59,19 @@ async function submit() {
         ElMessage.warning('请填写课程与申请内容')
         return
     }
+    if (!form.term_id) {
+        ElMessage.warning('请选择申请学期')
+        return
+    }
     await teacherApi.submitRequest({ ...form })
-    list.value.unshift({
-        request_id: Date.now(),
-        ...form,
-        term_name: '2025-2026学年第二学期',
-        status: '待审批',
-        created_at: new Date().toISOString().slice(0, 19),
-    })
     dialogVisible.value = false
     ElMessage.success('申请已提交，等待管理员审批')
+    await load()
 }
-onMounted(load)
+onMounted(() => {
+    load()
+    loadTerms().catch(() => {}) // 预加载，失败时 openDialog 会重试
+})
 </script>
 
 <template>
@@ -86,6 +111,16 @@ onMounted(load)
                         <el-option label="调课申请" value="调课申请" />
                         <el-option label="停课申请" value="停课申请" />
                         <el-option label="成绩修改申请" value="成绩修改申请" />
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="申请学期">
+                    <el-select v-model="form.term_id" placeholder="请选择学期" style="width: 100%">
+                        <el-option
+                            v-for="t in terms"
+                            :key="t.term_id"
+                            :label="t.term_name + (t.is_current ? '（当前）' : '')"
+                            :value="t.term_id"
+                        />
                     </el-select>
                 </el-form-item>
                 <el-form-item label="课程名称">
