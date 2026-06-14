@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { studentApi } from '@/api/services'
+import { term, loadCurrentTerm } from '@/store/term'
 
 const loading = ref(false)
 const courses = ref([])
@@ -75,7 +76,10 @@ function showDetail(c) {
     detailVisible.value = true
 }
 
-onMounted(load)
+onMounted(() => {
+    load()
+    loadCurrentTerm()
+})
 </script>
 
 <template>
@@ -83,7 +87,7 @@ onMounted(load)
         <div class="page-header">
             <div>
                 <h2>选课中心</h2>
-                <div class="subtitle">2025-2026学年第二学期 · 选课进行中</div>
+                <div class="subtitle">{{ term.current?.term_name || '当前学期' }} · 选课进行中</div>
             </div>
         </div>
 

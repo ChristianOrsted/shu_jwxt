@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { studentApi } from '@/api/services'
+import { term, loadCurrentTerm } from '@/store/term'
 
 const loading = ref(false)
 const list = ref([])
@@ -37,7 +38,10 @@ async function drop(row) {
         if (e !== 'cancel') ElMessage.error(e.message || '退课失败')
     }
 }
-onMounted(load)
+onMounted(() => {
+    load()
+    loadCurrentTerm()
+})
 </script>
 
 <template>
@@ -45,7 +49,7 @@ onMounted(load)
         <div class="page-header">
             <div>
                 <h2>已选课程</h2>
-                <div class="subtitle">2025-2026学年第二学期</div>
+                <div class="subtitle">{{ term.current?.term_name || '当前学期' }}</div>
             </div>
             <el-tag type="primary" size="large">已选学分合计：{{ totalCredits }}</el-tag>
         </div>

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { teacherApi } from '@/api/services'
+import { term, loadCurrentTerm } from '@/store/term'
 
 const router = useRouter()
 const loading = ref(false)
@@ -30,7 +31,10 @@ function viewRoster() {
 function inputGrade() {
     router.push('/teacher/grade-input')
 }
-onMounted(load)
+onMounted(() => {
+    load()
+    loadCurrentTerm()
+})
 </script>
 
 <template>
@@ -38,7 +42,7 @@ onMounted(load)
         <div class="page-header">
             <div>
                 <h2>授课任务</h2>
-                <div class="subtitle">本人承担的全部教学班（含历史学期）</div>
+                <div class="subtitle">{{ term.current?.term_name || '当前学期' }} · 本人承担的教学班</div>
             </div>
         </div>
 

@@ -3,10 +3,13 @@
 """
 管理员端路由模块
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import request
 from app.routes import admin_bp
-from app.utils import success_response, error_response, sync_offering_status_by_window
+from app.utils import (
+    success_response, error_response, sync_offering_status_by_window,
+    default_business_windows,
+)
 from app.auth import role_required
 from app.db import get_db_cursor
 import pymysql
@@ -269,15 +272,44 @@ def get_terms():
 @admin_bp.route('/terms/<int:term_id>/set-current', methods=['PUT'])
 @role_required('admin')
 def set_current_term(term_id):
-    """将指定学期设为当前学期（互斥：其余学期自动取消当前标记）"""
+    """将指定学期设为当前学期（互斥：其余学期自动取消当前标记），
+    并确保该学期的业务窗口可用——缺失的四类窗口自动补齐，选课/退课窗口
+    顺延到覆盖当前时间，使切换后教师/学生立刻能在该学期选课、看课表。"""
     with get_db_cursor(commit=True) as cursor:
-        cursor.execute("SELECT term_name FROM Terms WHERE term_id=%s", (term_id,))
+        cursor.execute(
+            "SELECT term_name, start_date, end_date FROM Terms WHERE term_id=%s",
+            (term_id,),
+        )
         row = cursor.fetchone()
         if not row:
             return error_response(404, "学期不存在")
 
         # 一条语句完成互斥：匹配的学期置 1，其余置 0
         cursor.execute("UPDATE Terms SET is_current = (term_id=%s)", (term_id,))
+
+        # 补齐缺失的业务窗口（按学期日期推算，缺日期则立即开放）
+        cursor.execute(
+            "SELECT window_type FROM BusinessWindows WHERE term_id=%s", (term_id,),
+        )
+        existing = {r['window_type'] for r in cursor.fetchall()}
+        now = datetime.now()
+        for wtype, wstart, wend in default_business_windows(
+            row['start_date'], row['end_date'], now
+        ):
+            if wtype not in existing:
+                cursor.execute(
+                    "INSERT INTO BusinessWindows (term_id, window_type, start_time, end_time) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (term_id, wtype, wstart, wend),
+                )
+
+        # 选课/退课窗口顺延到覆盖当前时间，保证切过去即可选课/退课
+        cursor.execute(
+            "UPDATE BusinessWindows "
+            "SET start_time = LEAST(start_time, %s), end_time = GREATEST(end_time, %s) "
+            "WHERE term_id=%s AND window_type IN ('选课', '退课')",
+            (now - timedelta(days=1), now + timedelta(days=30), term_id),
+        )
         return success_response(message=f"已将「{row['term_name']}」设为当前学期")
 
 
@@ -328,17 +360,26 @@ def create_academic_year():
         )
         year_id = cursor.lastrowid
 
-        cursor.execute(
-            "INSERT INTO Terms (academic_year_id, term_no, term_name, start_date, end_date, is_current) "
-            "VALUES (%s, 1, %s, %s, %s, FALSE)",
-            (year_id, f"{year_name}第一学期", t1_start, t1_end),
+        # 创建两个学期，并为每个学期附带默认的四个业务窗口（选课/退课/成绩录入/成绩公布）
+        for term_no, term_label, t_start, t_end in (
+            (1, f"{year_name}第一学期", t1_start, t1_end),
+            (2, f"{year_name}第二学期", t2_start, t2_end),
+        ):
+            cursor.execute(
+                "INSERT INTO Terms (academic_year_id, term_no, term_name, start_date, end_date, is_current) "
+                "VALUES (%s, %s, %s, %s, %s, FALSE)",
+                (year_id, term_no, term_label, t_start, t_end),
+            )
+            term_id = cursor.lastrowid
+            for wtype, wstart, wend in default_business_windows(t_start, t_end):
+                cursor.execute(
+                    "INSERT INTO BusinessWindows (term_id, window_type, start_time, end_time) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (term_id, wtype, wstart, wend),
+                )
+        return success_response(
+            message=f"学年「{year_name}」已创建（含第一、第二学期及默认业务窗口）"
         )
-        cursor.execute(
-            "INSERT INTO Terms (academic_year_id, term_no, term_name, start_date, end_date, is_current) "
-            "VALUES (%s, 2, %s, %s, %s, FALSE)",
-            (year_id, f"{year_name}第二学期", t2_start, t2_end),
-        )
-        return success_response(message=f"学年「{year_name}」已创建（含第一、第二学期）")
 
 
 @admin_bp.route('/academic-years/<int:year_id>', methods=['DELETE'])

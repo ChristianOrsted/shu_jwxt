@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { adminApi } from '@/api/services'
+import { term, loadCurrentTerm } from '@/store/term'
 
 const loading = ref(false)
 const data = ref({ cards: {}, capacity: [] })
@@ -13,7 +14,10 @@ async function load() {
         loading.value = false
     }
 }
-onMounted(load)
+onMounted(() => {
+    load()
+    loadCurrentTerm()
+})
 </script>
 
 <template>
@@ -21,7 +25,7 @@ onMounted(load)
         <div class="page-header">
             <div>
                 <h2>系统总览</h2>
-                <div class="subtitle">2025-2026学年第二学期 · 教务运行概况</div>
+                <div class="subtitle">{{ term.current?.term_name || '当前学期' }} · 教务运行概况</div>
             </div>
         </div>
 

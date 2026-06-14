@@ -63,7 +63,7 @@ def get_offerings():
         JOIN Terms term ON co.term_id = term.term_id
         LEFT JOIN ClassSchedules cs ON co.offering_id = cs.offering_id
         LEFT JOIN Classrooms cr ON cs.classroom_id = cr.classroom_id
-        WHERE co.teacher_id = %s
+        WHERE co.teacher_id = %s AND term.is_current = TRUE
         GROUP BY co.offering_id
         ORDER BY term.term_id DESC, co.offering_id
         """
@@ -371,9 +371,10 @@ def get_grade_stats():
             SUM(e.is_retake) as retake_count
         FROM CourseOfferings co
         JOIN Courses c ON co.course_id = c.course_id
+        JOIN Terms term ON co.term_id = term.term_id
         LEFT JOIN Enrollments e ON co.offering_id = e.offering_id AND e.status = '已选'
         LEFT JOIN Grades g ON e.enrollment_id = g.enrollment_id AND g.score_status IN ('已提交', '已发布')
-        WHERE co.teacher_id = %s
+        WHERE co.teacher_id = %s AND term.is_current = TRUE
         GROUP BY co.offering_id
         HAVING COUNT(g.grade_id) > 0
         ORDER BY co.offering_id DESC

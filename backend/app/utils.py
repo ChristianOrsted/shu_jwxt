@@ -3,8 +3,49 @@
 """
 工具函数模块
 """
+from datetime import datetime, timedelta
 from flask import jsonify
 from functools import wraps
+
+
+# 学期固定包含的四类业务窗口
+WINDOW_TYPES = ('选课', '退课', '成绩录入', '成绩公布')
+
+
+def default_business_windows(start_date, end_date, now=None):
+    """推算某学期四个业务窗口的默认起止时间。
+
+    - 有学期起止日期时按日期推算：选课/退课围绕开学日，成绩录入/公布围绕结课日；
+    - 缺少对应日期时退化为「立即开放」——区间覆盖当前时间，保证学期切过去即可用。
+
+    入参 start_date / end_date 为 datetime.date 或 None。
+    返回 [(window_type, start_time, end_time), ...]，时间均为 datetime。
+    """
+    now = now or datetime.now()
+    open_start = now - timedelta(days=30)
+
+    if start_date:
+        s = datetime.combine(start_date, datetime.min.time())
+        enroll = (s - timedelta(days=7), s + timedelta(days=14))
+        withdraw = (s - timedelta(days=7), s + timedelta(days=28))
+    else:
+        enroll = (open_start, now + timedelta(days=60))
+        withdraw = (open_start, now + timedelta(days=75))
+
+    if end_date:
+        e = datetime.combine(end_date, datetime.min.time())
+        grade_input = (e - timedelta(days=14), e + timedelta(days=1))
+        grade_publish = (e - timedelta(days=7), e + timedelta(days=14))
+    else:
+        grade_input = (open_start, now + timedelta(days=120))
+        grade_publish = (open_start, now + timedelta(days=150))
+
+    return [
+        ('选课', *enroll),
+        ('退课', *withdraw),
+        ('成绩录入', *grade_input),
+        ('成绩公布', *grade_publish),
+    ]
 
 
 def success_response(data=None, message="success"):

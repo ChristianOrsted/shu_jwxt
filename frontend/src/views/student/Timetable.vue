@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { studentApi } from '@/api/services'
 import { sections, weekdayNames } from '@/api/mock'
+import { term, loadCurrentTerm } from '@/store/term'
 
 const loading = ref(false)
 const entries = ref([])
@@ -43,7 +44,10 @@ function shouldRender(section, weekday) {
     if (!c) return true
     return c.isStart
 }
-onMounted(load)
+onMounted(() => {
+    load()
+    loadCurrentTerm()
+})
 </script>
 
 <template>
@@ -51,7 +55,7 @@ onMounted(load)
         <div class="page-header">
             <div>
                 <h2>我的课表</h2>
-                <div class="subtitle">2025-2026学年第二学期</div>
+                <div class="subtitle">{{ term.current?.term_name || '当前学期' }}</div>
             </div>
             <el-button :icon="'Printer'" @click="printPage">打印 / 导出</el-button>
         </div>
